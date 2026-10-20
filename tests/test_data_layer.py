@@ -172,6 +172,24 @@ def test_record_mode_persists_results_for_later_replay(cache):
     assert stored is not None and stored.bytes_billed == 4242
 
 
+def test_recorded_fixtures_are_masked(cache):
+    """Fixtures are committed, so raw customer ids must not reach them.
+
+    The aggregates recorded so far contain none, but a top-customers query would.
+    """
+    frame = pd.DataFrame({"user_id": [4211, 5002], "revenue": [900.0, 800.0]})
+    gateway = BigQueryGateway(mode=CacheMode.RECORD, cache=cache)
+    gateway._client = FakeClient(frame)
+
+    gateway.execute("SELECT user_id, revenue FROM s_order_items", budget=Budget())
+
+    stored = ResultCache(cache.directory).get("SELECT user_id, revenue FROM s_order_items")
+    assert stored is not None
+    values = [row["user_id"] for row in stored.rows]
+    assert all(str(v).startswith("CUST-") for v in values), values
+    assert 4211 not in values
+
+
 def test_live_mode_does_not_write_fixtures(cache):
     """Fixtures are an explicit act, so the repo does not fill up by accident."""
     _live(FakeClient(_frame()), cache).execute(SQL, budget=Budget())

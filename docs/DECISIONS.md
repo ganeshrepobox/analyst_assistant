@@ -133,7 +133,8 @@ cannot be seeded without the BigQuery access it was meant to replace.
 
 **Adopted:** a cached BigQuery client with three modes, live, record, replay, keyed on a hash
 of the normalized SQL. One dialect, one code path, around 60 lines, and it pays for four
-requirements at once: a zero-credential reviewer run, the cost cache, deterministic fixtures for
+requirements at once: a review without a Google Cloud project (a Gemini key is still
+needed), the cost cache, deterministic fixtures for
 the eval harness, and network-free tests. The help text states plainly that replay only answers
 pre-recorded questions.
 
@@ -178,3 +179,74 @@ Gemini 2.5 became access-restricted; current stable models are `gemini-3.8-flash
 `gemini-3.5-flash-lite`, `gemini-4-argon`, and `gemini-embedding-001`. A `doctor` command lists
 what the key can *actually* reach before any code depends on it. This also serves requirement 8:
 changing models is a config edit, not a redeploy.
+
+## D11. flash-lite everywhere, measured rather than assumed
+
+On the free-tier key used to build this, `gemini-3.8-flash` took 154 seconds to
+answer "reply with one word", and 170 seconds with thinking lowered, so the latency
+is queuing rather than reasoning. `gemini-3.5-flash-lite` answers the same prompt in
+11-39 seconds and a realistic SQL prompt in about 27.
+
+So flash-lite handles triage, SQL and synthesis. A key with better quota can change
+that in `.env` without touching code. A 90-second request timeout was added at the
+same time, so a queued call fails and degrades rather than hanging the CLI.
+
+Related: `gemini-2.5-flash` is still returned by the models list and 404s when
+called. Anything hardcoded from the brief would already be broken, which is the
+practical argument for model ids living in config.
+
+## D12. Temperature 0 for classification and SQL
+
+Two runs of "what was our total revenue in 2024" produced two different
+formulations: one filtering on `order_items.status`, one on `orders.status`. They
+agreed numerically, but only because those columns happen to be identical in this
+dataset.
+
+Triage and SQL now run at temperature 0, synthesis stays warmer for prose. Stable
+SQL also means a recorded fixture is reusable, which is what makes replay mode
+worth having.
+
+## D13. A faithfulness check on the written answer
+
+A live run tabulated 2504 customers correctly and wrote "2,5004 customers" in the
+sentence above the table. Prompting does not reliably prevent that and no reader
+would catch it.
+
+`safety/faithfulness.py` extracts the figures from the answer and checks them
+against the query results. Deterministic, no model call, so it costs nothing.
+
+It flags rather than blocks. Percentages, differences and growth rates legitimately
+do not appear in the results, so an unmatched number is a signal rather than proof.
+Unverified figures become a metric and show in `/debug`.
+
+The same run also footnoted "revenue after returns and discounts". Discounts were
+invented. The metric registry now supplies that line verbatim with an instruction to
+reproduce it unchanged, rather than asking the model to describe its own definition.
+
+## D14. Report commands end after triage
+
+A delete request originally ran the whole analysis path. Triage classified it
+correctly, but the router had no route for it, so it fell through to SQL generation
+and spent a model call and 25 seconds writing a query for "delete all reports
+mentioning Allbirds" before the CLI noticed and took over. It now ends at a
+`defer_to_reports` node: one model call and under 10 seconds.
+
+Worth noting as a class of bug. The classification was right and the handler was
+right; the routing table silently had no entry, and a missing route defaulted to the
+most expensive path.
+
+## D15. What replay mode actually removes
+
+Replay serves recorded query results, so a reviewer does not need a Google Cloud
+project. It does not remove Gemini: triage, SQL generation and the written answer
+are all model calls, and the agent refuses to start without a key. An earlier draft
+of the setup guide claimed "no GCP project and no API key", which was wrong, and
+the docs now say so plainly.
+
+It is also only as complete as the recordings. The lookup is keyed on the generated
+SQL, so a question whose SQL does not match a fixture reports a miss rather than an
+answer. Temperature 0 on SQL generation makes that much less likely but does not
+guarantee it.
+
+For a reviewer who wants to see a full session without running anything, the
+transcript in the README is the honest artifact.

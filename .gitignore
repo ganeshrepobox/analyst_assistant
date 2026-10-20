@@ -28,3 +28,9 @@ AI Technical Assignment.md
 
 # Local runtime state
 checkpoints.sqlite
+
+# Tool caches and build artefacts
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

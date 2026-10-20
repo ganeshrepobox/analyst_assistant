@@ -6,8 +6,8 @@ Cost is checked before the query runs. BigQuery bills on bytes scanned, so
 checking afterwards is only a receipt. The dry run itself is free.
 
 Replay mode answers from recorded results and never imports a Google library, so
-the prototype runs without a GCP account. It is also where the test fixtures come
-from.
+the prototype runs without a Google Cloud project. Gemini is still required, since
+triage and synthesis are model calls. It is also where the test fixtures come from.
 """
 
 from __future__ import annotations
@@ -337,7 +337,14 @@ class BigQueryGateway:
                 m["attrs"] = {"sql": sql, "row_count": len(df), "estimated_bytes": estimated}
 
         if self.mode is CacheMode.RECORD:
-            self.cache.put(sql, df, bytes_billed=billed)
+            # Masked before it is written. Fixtures are committed to the repo, so
+            # caching the raw frame would put customer ids in git history. The
+            # aggregates recorded so far happen to contain none, but a
+            # top-customers query would.
+            from ..safety.masking import mask_dataframe
+
+            safe, _ = mask_dataframe(df)
+            self.cache.put(sql, safe, bytes_billed=billed)
         return QueryResult(df=df, bytes_billed=billed)
 
     def table_schema(self, table: str) -> list[dict[str, Any]]:

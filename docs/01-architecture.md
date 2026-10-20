@@ -179,62 +179,51 @@ restart. That is exactly Redis's remit and not Postgres's.
 
 ## 4. The agent graph
 
-Control flow is explicit, which is the whole reason for choosing LangGraph (§5).
+This is the graph as built, node for node. Where the prototype folds a step into
+another node rather than giving it its own, that is noted after the diagram.
 
 ```mermaid
 flowchart TD
-    START(["Turn begins"]) --> PRE["prefilter<br/><b>deterministic</b>, denylist, length,<br/>known injection patterns<br/><i>no LLM: refuse before paying</i>"]
-    PRE -->|blocked| REFUSE["refuse<br/>log attempt + metric"]
-    PRE -->|ok| TRIAGE["triage<br/><b>one</b> structured-output call:<br/>intent, in_scope, steps[],<br/>uses_prior_result"]
+    START(["Turn begins"]) --> TRIAGE["triage<br/>one structured call:<br/>intent, reason, sub-questions<br/><i>temperature 0</i>"]
 
-    TRIAGE -->|off-topic / jailbreak| REFUSE
-    TRIAGE -->|schema question| SCHEMA["schema_qa<br/>answers from cached schema card<br/><i>no SQL, no BigQuery call</i>"]
-    TRIAGE -->|follow-up| FOLLOW["follow_up<br/>answers from prior result frame<br/><i>zero bytes billed</i>"]
-    TRIAGE -->|report CRUD| RESOLVE
-    TRIAGE -->|analysis| RETRIEVE
+    TRIAGE -->|refuse| REFUSE["refuse<br/>off-topic, injection,<br/>or asks for personal data"]
+    TRIAGE -->|schema| SCHEMA["schema_qa<br/>answers from the schema card<br/>+ the trio question catalogue<br/><i>no SQL, no query</i>"]
+    TRIAGE -->|follow_up| FOLLOW["follow_up<br/>answers from the prior<br/>result frame<br/><i>zero bytes billed</i>"]
+    TRIAGE -->|report_crud| DEFER["defer_to_reports<br/>ends the turn; the CLI hands<br/>off to the delete subgraph"]
+    TRIAGE -->|analysis| GEN
 
-    RETRIEVE["retrieve_golden_trios<br/>cosine over precomputed embeddings<br/>+ mined metric definitions"] --> GEN
-    GEN["generate_sql<br/>few-shot from trios<br/>scoped CTEs prepended"] --> VALID
+    GEN["generate_sql<br/>metric definitions always,<br/>nearest trios as examples<br/><i>temperature 0</i>"] --> VALID
 
-    VALID{"validate_sql<br/><b>sqlglot whitelist</b><br/>fails CLOSED"}
-    VALID -->|rejected| REPAIR
+    VALID{"validate_sql<br/>sqlglot whitelist<br/>fails CLOSED"}
+    VALID -->|rejected, with reason| GEN
     VALID -->|passed| EXEC
 
-    EXEC{"execute_bq<br/>dry_run then execute<br/>maximum_bytes_billed"}
-    EXEC -->|SQL error| REPAIR
-    EXEC -->|empty result| DIAG["diagnose_empty<br/>probe bounds, widen filters<br/><i>explain, never fabricate</i>"]
-    EXEC -->|rows| NEXT
+    EXEC{"execute_sql<br/>prepend scoped CTEs,<br/>dry run, budget check,<br/>execute, mask the result"}
+    EXEC -->|SQL error, as feedback| GEN
+    EXEC -->|another sub-question| GEN
+    EXEC -->|done, or degraded| SYN
 
-    REPAIR{"repair_sql<br/>max 2 attempts<br/>must-change-hash guard"}
-    REPAIR -->|budget left| GEN
-    REPAIR -->|exhausted| DEGRADE["degrade<br/>explain failure + trace_id<br/>offer the SQL for a human"]
+    SYN["synthesize<br/>writes the answer from masked<br/>figures; metric footnote quoted<br/>verbatim"] --> FAITH
 
-    NEXT{"more planned steps?<br/>max 3"}
-    NEXT -->|yes| GEN
-    NEXT -->|no| MASK
+    FAITH["faithfulness check<br/>every figure traced to a<br/>result cell<br/><i>records, does not block</i>"]
 
-    MASK["mask_pii<br/><b>before</b> synthesis, raw PII<br/>never enters model context"] --> SYN
-    SYN["synthesize_report<br/>structured Pydantic object<br/>persona + user prefs applied"] --> FAITH
-
-    FAITH{"faithfulness check<br/>every numeral present<br/>in a result cell?"}
-    FAITH -->|fail| DEGRADE
-    FAITH -->|pass| PREFS["learn_prefs<br/>candidate signals, confidence gated"]
-
+    REFUSE --> OUT
     SCHEMA --> OUT
     FOLLOW --> OUT
-    DIAG --> OUT
-    DEGRADE --> OUT
-    REFUSE --> OUT
-    PREFS --> OUT(["Response + cost line + trace_id"])
-
-    subgraph destructive["Destructive branch, see §8"]
-        RESOLVE["resolve_candidates<br/>owner-filtered, explicit ID set<br/><b>persisted to state</b>"]
-        RESOLVE --> PREVIEW["preview<br/>numbered table of exact matches"]
-        PREVIEW --> INT{{"interrupt()<br/>durable pause"}}
-        INT --> APPLY["apply_delete<br/>soft delete + audit row<br/><i>runs on the persisted set</i>"]
-    end
-    APPLY --> OUT
+    DEFER --> OUT
+    FAITH --> OUT(["Answer + scope line + cost line + trace id"])
 ```
+
+Folded in rather than separate nodes, to keep the graph small:
+
+| Design step | Where it actually lives |
+|---|---|
+| `mask_pii` | inside `execute_sql`, before the frame is stored, so masking still precedes synthesis |
+| `repair_sql` | a conditional edge back to `generate_sql` carrying the error as feedback, bounded by the budget's must-change-hash guard |
+| `diagnose_empty` | inside `synthesize`, which reports no-rows as its own outcome rather than a zero |
+| `retrieve_golden_trios` | before the graph, in the CLI, so the retrieved context arrives as an input |
+| deterministic prefilter | not built. Triage handles classification and refusal in one call; a regex prefilter would save a call on obvious abuse and is the first thing to add |
+| `learn_prefs` | not built. Style is an explicit per-user setting, not learned. See §13 |
 
 ### Three routes a naive design omits
 

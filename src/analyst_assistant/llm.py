@@ -38,6 +38,11 @@ DEFAULT_MODELS = {
 # the key has better quota.
 REQUEST_TIMEOUT_MS = 90_000
 
+# Temperature per job. Classification and SQL should be reproducible: two runs of
+# the same revenue question earlier produced two different metric definitions, and
+# stable SQL also means a recorded fixture is reusable. Prose is left warmer.
+TEMPERATURES = {"triage": 0.0, "sql": 0.0, "synthesis": 0.4}
+
 ENV_KEYS = {
     "triage": "MODEL_TRIAGE",
     "sql": "MODEL_SQL",
@@ -162,7 +167,11 @@ class Gemini:
             return self.client.models.generate_content(
                 model=model,
                 contents=prompt,
-                config={"response_mime_type": "application/json", "response_schema": schema},
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": schema,
+                    "temperature": TEMPERATURES.get(job, 0.0),
+                },
             )
 
         response = call_with_resilience(call, breaker=self.breaker)
@@ -188,7 +197,11 @@ class Gemini:
         self._limiter_for(model).wait()
 
         def call() -> Any:
-            return self.client.models.generate_content(model=model, contents=prompt)
+            return self.client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={"temperature": TEMPERATURES.get(job, 0.4)},
+            )
 
         response = call_with_resilience(call, breaker=self.breaker)
         self._record(job, self._usage_of(response, model), budget, recorder, span)

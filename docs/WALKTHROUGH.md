@@ -245,13 +245,122 @@ control. The dry run is free. `maximum_bytes_billed` is set as well, so a bug in
 own accounting still can't produce a runaway bill.
 
 Three modes: `live`, `record`, `replay`. Replay answers from recorded results and
-never imports a Google library, so a reviewer with no GCP account can still run the
-thing. That's also where the test fixtures come from.
+never imports a Google library, so a reviewer without a Google Cloud project can still run
+it. It does not remove Gemini, though: triage, SQL generation and the written answer are
+model calls, so a Gemini key is still needed. And the lookup is keyed on the generated SQL,
+so a question whose SQL does not match a recording reports a miss. It's also where the test
+fixtures come from.
 
 This replaced an earlier plan for a DuckDB copy of the dataset. DuckDB's SQL differs
 from BigQuery's in ways that matter here, `DATE_TRUNC` argument order,
 `SAFE_DIVIDE`, no dry run, so it would have meant two dialects and two validators.
 And it couldn't be seeded without the BigQuery access it was meant to replace.
+
+### 12. `golden/bucket.py` and `golden_bucket/` - past analyses and metric definitions
+
+Two things live here, and they are not equally important.
+
+`golden_bucket/trios/*.json` holds eight past analyses, each a question, the SQL an
+analyst wrote, and what they reported. These are retrieved and used as few-shot
+examples. Useful, but they only help with phrasing.
+
+`golden_bucket/metrics.yaml` is the part that matters. It pins what each metric
+means, and `net_revenue` carries the filter that excludes cancelled and returned
+orders. Without it the model picks a definition per question and never says which:
+two runs of "total revenue in 2024" produced two different formulations before this
+existed. The definitions go into every analysis prompt; the examples are only the
+nearest few.
+
+Retrieval is cosine over embeddings precomputed by `analyst_assistant index`, with
+word overlap as a fallback if the index is missing so the agent still works. Brute
+force over eight vectors is exact and instant. A vector database here would be
+infrastructure for its own sake, and the write-up says so.
+
+A test asserts every trio passes our own SQL validator and still composes under
+entitlement scoping. The trios are examples the model copies, so a trio the
+validator would reject teaches it to write SQL we then refuse to run.
+
+### 13. `safety/faithfulness.py` - do the numbers come from the data
+
+Extracts every figure from the written answer and checks it against the query
+results. No model call.
+
+This exists because of an actual failure. A live run tabulated 2504 customers
+correctly and then wrote "2,5004 customers" in the sentence above the table. No
+reader would catch that, and prompting does not reliably prevent it.
+
+It flags rather than blocks, because percentages and differences legitimately are
+not in the results. Unverified figures are counted as a metric and shown in
+`/debug`. Writing it, a test caught my own false positive: years clear the
+significance threshold, so "in 2024" was being reported as an unverified number.
+
+### 14. `llm.py` - the Gemini wrapper
+
+Three methods, because the graph needs three things: a typed object, a block of
+text, an embedding. Structured output is validated server-side against a Pydantic
+schema, so a malformed reply is the provider's problem rather than ours to parse.
+
+Model ids come from config. That is requirement 8, but it is also necessary:
+`gemini-2.5-flash` is still listed by the API and returns 404 when called.
+
+Two numbers worth knowing. On a free-tier key `gemini-3.8-flash` took 154 seconds
+for a one-word reply, and 170 with thinking lowered, so it is queuing rather than
+reasoning. flash-lite answers in 11-39 seconds and is used throughout. There is a
+90-second request timeout so a queued call degrades instead of hanging.
+
+Temperature is 0 for triage and SQL and warmer for prose, so classification and
+queries are reproducible.
+
+### 15. `config/persona.py` - tone without a deploy
+
+Personas are YAML, re-read when the file's mtime changes, so `/persona concise`
+takes effect on the next question.
+
+The division is the point. A persona sets tone, length and layout. It cannot reach
+the PII rules, the SQL whitelist or entitlement scoping, because those are in code.
+"Non-developers can edit the prompt" plus "the guardrails are in the prompt" means
+non-developers can delete the guardrails.
+
+A malformed persona file falls back to the default rather than failing the run. The
+whole point of the file is that non-developers edit it, so a typo should cost tone,
+not availability.
+
+### 16. `graph/agent.py` - the main graph
+
+One triage call, then one of five routes: `schema_qa` (no query at all),
+`follow_up` (answers from the previous result, zero cost), `analysis` (SQL, looping
+up to three sub-questions), `refuse`, and `defer_to_reports`.
+
+That last one was added after watching a delete request run the entire analysis
+path first. Triage classified it correctly, but there was no route for it, so it
+fell through to SQL generation and spent a model call and 25 seconds writing a query
+for "delete all reports mentioning Allbirds". One model call and 9.6 seconds now.
+
+No checkpointer on this graph. The only thing that must survive a restart is a
+pending delete confirmation, which lives in `destructive.py` with its own
+checkpointer. That means state here can hold real objects, the Budget and the
+Recorder, instead of dicts that round-trip through JSON.
+
+`run_turn` is the error boundary: a failed turn still returns an answer and a trace
+id rather than raising.
+
+### 17. `cli.py` - the interface
+
+`doctor` first. It checks credentials, which models the key can actually reach, a
+BigQuery dry run, and schema drift against `safety/schema.py`. That last check
+earned itself immediately: it found `users.user_geom`, a GEOGRAPHY column holding
+the customer's location that was not classified at all.
+
+`chat` is the REPL. `/debug` for the node timeline, `/trace` to replay a stored
+turn, `/metrics`, `/reports`, `/undo`, `/save`, `/persona`, `/su`. Switching
+persona or user recompiles the graph in place.
+
+Every turn prints a cost line: model calls, tokens, MB billed, trace id. The brief
+asks for self-correction without inflating costs, so it seemed worth making that
+visible rather than asserting it.
+
+`--chaos bq_fail` or `llm_fail` injects transient failures, so degradation can be
+shown in ten seconds instead of described.
 
 ---
 

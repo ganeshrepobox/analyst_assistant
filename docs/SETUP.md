@@ -71,13 +71,22 @@ are the two things most likely to derail a build, and both fail in confusing way
 TIMESTAMP and NUMERIC columns. It is pinned in `requirements.txt` for this reason. If you run
 the assignment's `b1_client.py` standalone, install `db-dtypes` and `pyarrow` first.
 
-## 4. No credentials? Replay mode
+## 4. No Google Cloud project? Replay mode
 
 ```powershell
 $env:BQ_MODE = "replay"
 python -m analyst_assistant chat
 ```
 
-Replay serves recorded query results from `fixtures/` and needs no GCP project and no API key.
-It only answers pre-recorded questions, enough to exercise the safety, confirmation,
-resilience and observability paths end to end.
+Replay answers from recorded query results in `fixtures/`, so **step 2 is not needed**.
+
+Be clear on what this does and does not remove. It removes BigQuery, not Gemini: triage,
+SQL generation and the written answer are all model calls, so **a Gemini API key is still
+required** and the agent will refuse to start without one. It is also only as complete as
+the recordings: the lookup is keyed on the generated SQL, so a question whose SQL does not
+match a fixture reports a replay miss rather than an answer.
+
+What it is good for: the safety, confirmation, resilience and observability paths, none of
+which touch the warehouse. The saved-report and delete flows work fully in replay mode.
+For a reviewer who wants to see a complete analysis session without running anything, the
+transcript in the README is the better artifact.
