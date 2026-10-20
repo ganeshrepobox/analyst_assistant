@@ -5,7 +5,10 @@
 gcp-key*.json
 
 # Local state
+# -wal and -shm suffixes do not match *.sqlite, which is how the checkpointer's
+# write-ahead log ended up tracked and pushed.
 *.sqlite
+*.sqlite-*
 *.sqlite3
 *.db
 logs/
@@ -27,7 +30,7 @@ venv/
 AI Technical Assignment.md
 
 # Local runtime state
-checkpoints.sqlite
+checkpoints.sqlite*
 
 # Tool caches and build artefacts
 .mypy_cache/
