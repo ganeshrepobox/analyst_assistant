@@ -15,9 +15,16 @@ trace ID and a cost line.
 
 `thelook_ecommerce` has no revenue column. Revenue has to be derived from
 `order_items.sale_price`, and both `orders.status` and `order_items.status` contain
-`Cancelled` and `Returned`. So "total revenue" has four or five defensible
-definitions that differ by a few percent, and a language model will pick one without
-mentioning it.
+`Cancelled` and `Returned`. So "total revenue" has several defensible definitions and a
+language model will pick one without mentioning which.
+
+This is measurable, not hypothetical. Across the whole dataset, including cancelled and
+returned orders gives $10,814,271; excluding them gives $8,148,817. That is a 32.7%
+overstatement from one unstated choice.
+
+Worth knowing the detail: the two status columns hold identical values in all 181,978
+rows, so picking the order table over the item table makes no difference. Whether to
+filter at all makes a third of the revenue figure.
 
 The audience here cannot check the number. A technical user notices when revenue is
 out by a factor of three; an executive acts on it. So the main risk in this system

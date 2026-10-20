@@ -30,8 +30,13 @@ Three properties make this harder than "text-to-SQL with a chat wrapper":
 
 There is no revenue column. Revenue must be derived from `order_items.sale_price`, and
 *both* `orders.status` and `order_items.status` carry `Cancelled` and `Returned`. So "total
-revenue" has at least four plausible-looking definitions that differ by percent-level amounts,
-and a language model will silently pick one.
+revenue" has several plausible-looking definitions and a language model will silently pick
+one. Measured on the full dataset: including cancelled and returned orders gives
+$10,814,271 of revenue, excluding them gives $8,148,817. Picking the wrong one
+overstates revenue by 32.7%.
+
+(The two status columns turn out to hold identical values in all 181,978 rows, so
+choosing between them is harmless here. Whether to filter on them at all is not.)
 
 This single observation drives the central design decision: the Golden Bucket is not decorative
 RAG, it is the mechanism that pins metric definitions down. See §6.
@@ -317,7 +322,7 @@ net_revenue:
   sql: SUM(oi.sale_price)
   requires: [order_items oi, orders o]
   filter: o.status NOT IN ('Cancelled', 'Returned')
-  note: gross_revenue omits the status filter; the two differ by ~8% on this dataset
+  note: gross_revenue omits the status filter, which overstates revenue by 32.7%
   source_trios: [trio_0017, trio_0023, trio_0031]
 ```
 

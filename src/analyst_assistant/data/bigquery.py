@@ -171,7 +171,7 @@ class ResultCache:
 class RateLimiter:
     """Minimum spacing between calls. The Gemini free tier allows about 10/minute."""
 
-    min_interval_seconds: float = 6.5
+    min_interval_seconds: float = 2.5
     _last_call: float | None = field(default=None, repr=False)
 
     def wait(self, *, sleep=time.sleep, clock=time.monotonic) -> float:

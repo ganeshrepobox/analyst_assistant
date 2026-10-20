@@ -1,0 +1,8 @@
+name: concise
+label: Bullet points only
+tone: >
+  Terse. No preamble, no restating the question. Every line carries a number or a
+  decision.
+verbosity: short
+format: bullets
+include_action_items: true

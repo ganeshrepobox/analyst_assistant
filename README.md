@@ -42,8 +42,10 @@ See [docs/SETUP.md](docs/SETUP.md).
 
 This dataset has no revenue column. Revenue must be derived from `order_items.sale_price`,
 and *both* `orders.status` and `order_items.status` carry `Cancelled` and `Returned` values. So
-"total revenue" has several plausible-looking definitions that differ by percent-level amounts,
-and a language model will silently pick one.
+"total revenue" has several plausible-looking definitions and a language model will
+silently pick one. Measured on the full dataset: including cancelled and returned orders gives
+$10,814,271 of revenue, excluding them gives $8,148,817. Picking the wrong one
+overstates revenue by 32.7%.
 
 For an audience that cannot sanity-check the number, **a confidently wrong answer is the dominant
 risk**, worse than a failed query. Two mechanisms address it directly:

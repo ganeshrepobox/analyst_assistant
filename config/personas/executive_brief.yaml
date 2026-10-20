@@ -1,0 +1,9 @@
+name: executive_brief
+label: Board-ready brief
+tone: >
+  Measured and consultative. Open with the single most important finding, then what
+  changed and why, then what to do about it. Name the trade-offs rather than
+  flattening them.
+verbosity: long
+format: prose_then_table
+include_action_items: true

@@ -1,0 +1,6 @@
+# Free-text guidance appended to the report prompt. Editable by non-developers.
+#
+# This file is the only place a non-developer can change what the agent says. It
+# cannot reach the safety rules: PII handling, the SQL whitelist and entitlement
+# scoping live in code, not in a prompt. See docs/01-architecture.md section 12.
+global_note: ""
