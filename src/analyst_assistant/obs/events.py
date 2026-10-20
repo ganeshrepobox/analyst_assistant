@@ -1,17 +1,11 @@
-"""Structured event log and counters. Implements requirement 7.
+"""Event log and counters.
 
-One owned source of truth: a JSONL stream, one record per node execution,
-correlated by ``trace_id``. It is greppable, ships in the repo as an artifact,
-powers ``/trace``, and depends on nothing external -- a mandated requirement should
-not rest on a third-party service being reachable. LangSmith and OpenTelemetry are
-additions on top of this in production, never replacements for it.
+One JSONL file, a line per node, correlated by a short trace id. Kept
+self-contained: LangSmith and Cloud Trace belong in the production design, but a
+required feature should not depend on an external service being reachable.
 
-Every logged free-text field passes through the PII scrubber
-------------------------------------------------------------
-The question and the generated SQL can both contain personal data -- ``WHERE email
-= '...'`` being the obvious case -- so writing them verbatim would persist PII into
-the very artifact that exists to make the system auditable. Scrubbing happens here,
-at the boundary, rather than being left to each call site to remember.
+Free-text fields are scrubbed on the way in, since a question or a generated
+query can contain an email address.
 """
 
 from __future__ import annotations
@@ -29,17 +23,13 @@ from typing import Any
 
 from ..safety.masking import scrub
 
-#: Fields whose values are free text and must be scrubbed before being written.
-#: Everything else is structural -- node names, statuses, measurements.
+# Fields whose values are free text and must be scrubbed before being written.
+# Everything else is structural - node names, statuses, measurements.
 _TEXT_FIELDS = frozenset({"question", "sql", "message", "error", "preview", "answer"})
 
 
 def new_trace_id() -> str:
-    """A short, human-quotable correlation id.
-
-    Short on purpose: it is printed in user-facing error messages, and a full UUID
-    is hostile to read aloud or retype.
-    """
+    """Short correlation id. Short because users quote it back to us."""
     return uuid.uuid4().hex[:12]
 
 
@@ -85,10 +75,9 @@ class EventLog:
             handle.write(json.dumps(record, default=str) + "\n")
 
     def read_trace(self, trace_id: str) -> list[dict[str, Any]]:
-        """Every event for one turn, oldest first. Powers ``/trace <id>``.
+        """All events for one turn, oldest first. Powers /trace.
 
-        Scans the two most recent files. A real deployment queries BigQuery, so
-        scanning the whole directory would be the wrong shape to grow into.
+        Scans the two most recent files; production would query BigQuery.
         """
         events: list[dict[str, Any]] = []
         for path in sorted(self.directory.glob("events-*.jsonl"))[-2:]:
@@ -103,12 +92,7 @@ class EventLog:
 
 
 class Metrics:
-    """In-process counters.
-
-    Deliberately just counters. The metric *names* are the contract and stay
-    identical in production, where they become Cloud Monitoring time series -- so a
-    dashboard built against one works against the other.
-    """
+    """In-process counters. The metric names carry over to Cloud Monitoring."""
 
     def __init__(self) -> None:
         self._counters: Counter[str] = Counter()
@@ -120,7 +104,7 @@ class Metrics:
         return self._counters[name]
 
     def snapshot(self) -> dict[str, int]:
-        """What ``/metrics`` prints."""
+        """What /metrics prints."""
         return dict(sorted(self._counters.items()))
 
 
@@ -144,15 +128,11 @@ class Recorder:
 
     @contextmanager
     def span(self, node: str, **attrs: Any) -> Iterator[dict[str, Any]]:
-        """Time one node and emit its event, whether it succeeds or raises.
+        """Time a node and write its event, whether it succeeds or raises.
 
-        Yields a mutable dict the node fills in as it learns things -- token counts,
-        bytes billed, cache hits. A yielded dict rather than return values keeps
-        instrumentation out of every node's signature.
-
-        An exception is recorded and re-raised: the caller's error boundary decides
-        how to degrade, but the event is written either way, because failures are
-        exactly what this log exists to capture.
+        Yields a dict the node fills in as it goes (tokens, bytes, cache hits), which
+        keeps instrumentation out of node signatures. Exceptions are recorded and
+        re-raised.
         """
         m: dict[str, Any] = {"status": "ok"}
         started = time.perf_counter()
@@ -193,12 +173,9 @@ class Recorder:
                 self.metrics.incr("cache.hits")
 
     def record_pii_tripwire(self, findings: dict[str, int]) -> None:
-        """Record an egress-scrubber firing.
+        """Count an egress-scrubber hit.
 
-        Separate from ``span`` because the semantics differ: this is an alarm, not
-        a measurement. The tripwire should never fire -- direct identifiers are
-        absent from the scoped views -- so a firing means an upstream control
-        failed, and it is paged on rather than charted.
+        Separate from span because it is an alarm, not a measurement.
         """
         for kind, count in findings.items():
             self.metrics.incr(f"safety.pii_tripwire.{kind}", count)
@@ -206,11 +183,7 @@ class Recorder:
             self.metrics.incr("safety.pii_tripwire.total", sum(findings.values()))
 
     def cost_line(self) -> str:
-        """The per-turn cost summary printed in the CLI.
-
-        Requirement 5's cost clause is graded, so it should be observable by a
-        reviewer rather than merely true.
-        """
+        """Per-turn cost summary printed after each answer."""
         calls = sum(1 for e in self.events if e.tokens_in or e.tokens_out)
         tokens = sum(e.tokens_in + e.tokens_out for e in self.events)
         mb = sum(e.bytes_billed for e in self.events) / 1_000_000
@@ -226,7 +199,7 @@ class Recorder:
         return " · ".join(parts) + f" · trace {self.trace_id}"
 
     def timeline(self) -> list[str]:
-        """Node-by-node summary for ``/debug``."""
+        """Node-by-node summary for /debug."""
         marks = {"ok": "+", "error": "!", "refused": "x", "empty": "0"}
         rows = []
         for e in self.events:

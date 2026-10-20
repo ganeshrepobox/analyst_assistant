@@ -1,7 +1,7 @@
 """Budgets, failure classification and the circuit breaker.
 
 Requirement 5 asks the agent to self-correct "without inflating costs", and those
-clauses pull against each other -- every retry is another call. These tests pin the
+clauses pull against each other, every retry is another call. These tests pin the
 boundary.
 """
 
@@ -51,9 +51,7 @@ class FakeClock:
         self.now += seconds
 
 
-# --------------------------------------------------------------------------
 # Budget
-# --------------------------------------------------------------------------
 
 
 def test_llm_calls_are_capped():
@@ -127,9 +125,7 @@ def test_exhaustion_is_explained_in_terms_a_user_can_act_on():
     assert "stopped" in (budget.exhausted_reason() or "")
 
 
-# --------------------------------------------------------------------------
 # Transient classification
-# --------------------------------------------------------------------------
 
 
 def test_server_side_statuses_are_transient():
@@ -153,9 +149,7 @@ def test_unknown_exceptions_are_treated_as_permanent():
     assert not is_transient(ValueError("who knows"))
 
 
-# --------------------------------------------------------------------------
 # Retry
-# --------------------------------------------------------------------------
 
 
 def test_transient_failure_is_retried_until_it_succeeds():
@@ -199,9 +193,7 @@ def test_server_supplied_retry_after_is_honoured_over_our_backoff():
     assert slept == [4.0]
 
 
-# --------------------------------------------------------------------------
 # Circuit breaker
-# --------------------------------------------------------------------------
 
 
 def test_breaker_opens_after_the_threshold_and_fails_fast():
@@ -243,9 +235,7 @@ def test_a_success_closes_the_breaker():
     assert not breaker.is_open
 
 
-# --------------------------------------------------------------------------
 # User-facing failure messages
-# --------------------------------------------------------------------------
 
 
 def test_open_breaker_message_tells_the_user_when_to_retry():

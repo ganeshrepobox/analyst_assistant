@@ -1,11 +1,8 @@
-"""Tests for the destructive-operation confirmation gate.
+"""Tests for the delete confirmation gate.
 
-Two themes:
-
-* **TOCTOU** -- consent is to a specific list of reports, not to a sentence, so a
-  token stops being valid the moment the matching set changes.
-* **Ambiguity resolves toward less deletion** -- every unclear reply must re-prompt
-  rather than proceed.
+Two things being pinned here: consent applies to a specific list of reports rather
+than to a sentence, so the token stops being valid once the matching set changes;
+and anything ambiguous has to end up deleting less, never more.
 """
 
 from __future__ import annotations
@@ -25,9 +22,7 @@ ALICE = "exec_women_apparel"
 BOB = "exec_outerwear"
 
 
-# --------------------------------------------------------------------------
 # Token validity
-# --------------------------------------------------------------------------
 
 
 def test_token_validates_against_the_set_it_was_issued_for():
@@ -54,9 +49,7 @@ def test_token_expires():
     assert token.check(user_id=ALICE, report_ids=["a"], now=future) is TokenError.EXPIRED
 
 
-# --------------------------------------------------------------------------
 # TOCTOU
-# --------------------------------------------------------------------------
 
 
 def test_an_added_match_invalidates_the_token():
@@ -77,14 +70,12 @@ def test_a_removed_match_invalidates_the_token():
 
 
 def test_a_swapped_match_invalidates_the_token():
-    """Same count, different contents -- a count check alone would miss this."""
+    """Same count, different contents, a count check alone would miss this."""
     token = issue_token(user_id=ALICE, report_ids=["a", "b"])
     assert token.check(user_id=ALICE, report_ids=["a", "z"]) is TokenError.SET_CHANGED
 
 
-# --------------------------------------------------------------------------
 # Friction scales with blast radius
-# --------------------------------------------------------------------------
 
 
 def test_small_delete_accepts_a_natural_yes():
@@ -122,9 +113,7 @@ def test_enumerating_every_item_is_still_a_bulk_delete():
     assert parse_reply("1 2 3 4", token=token)[0] is Decision.UNCLEAR
 
 
-# --------------------------------------------------------------------------
 # Reply parsing
-# --------------------------------------------------------------------------
 
 
 def test_cancellation_is_recognised():

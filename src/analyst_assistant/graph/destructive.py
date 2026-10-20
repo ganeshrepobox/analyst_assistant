@@ -1,33 +1,14 @@
-"""The destructive-operation subgraph: resolve, preview, interrupt, apply.
+"""LangGraph flow for deleting reports: resolve, preview, interrupt, apply.
 
-Implements the control-flow half of requirement 3, and is the clearest
-justification for choosing LangGraph: the confirmation is a *durable* pause. The
-process can exit between the preview and the approval, and the pending decision
-survives in the checkpointer.
+The node split matters. In langgraph 1.2.x the node holding interrupt() re-runs
+from its first line when the graph resumes, while earlier nodes do not. So
+resolution lives in its own upstream node and writes the id set to state, and
+await_confirmation only builds a prompt. If resolution ran inside that node, a
+report that started matching while the user was deciding would join a set they
+had already approved.
 
-Node boundaries are load-bearing
---------------------------------
-Verified against langgraph 1.2.16 rather than assumed: **the node containing
-``interrupt()`` re-executes from its top when the graph resumes**, while earlier
-nodes do not. That single fact dictates the shape:
-
-* ``resolve_candidates`` is a separate, upstream node, so resolution happens once
-  and the id set is written to state before the pause.
-* ``await_confirmation`` holds the ``interrupt()`` and everything above that call is
-  pure -- it only renders a prompt. Had resolution lived here it would re-run on
-  resume, and a report that began matching in the meantime would be silently swept
-  into a set the user had already approved.
-* ``apply_delete`` acts on the ids read back from state, never a fresh resolution.
-
-Persisting the set stops accidental drift; the token stops *consent* drift, binding
-a hash of the exact set shown. Consent is to a specific list, not to a sentence.
-
-What the model may not do
--------------------------
-Its only influence is upstream: it proposes a ``text`` or thread scope to resolve.
-It never names the ids to delete, and there is no delete tool it can call with its
-own arguments -- which is what stops "the ones I said" being reinterpreted after
-approval.
+The model only supplies a search term or a thread scope. It never names ids, and
+there is no delete tool it can call with its own arguments.
 """
 
 from __future__ import annotations
@@ -72,15 +53,11 @@ class DestructiveState(TypedDict, total=False):
 def build_destructive_graph(
     library: ReportLibrary, checkpointer: Any, *, recorder: Recorder | None = None
 ) -> Any:
-    """Compile the destructive-operation subgraph.
+    """Compile the delete flow.
 
-    Args:
-        library: The reports store. Ownership is enforced inside it, so this graph
-            never has to reason about whose reports these are.
-        checkpointer: Required -- ``interrupt()`` cannot work without one, and an
-            in-memory saver would defeat the restart behaviour this exists to show.
-        recorder: Optional; nodes are instrumented when supplied and run unchanged
-            when not, so the graph is testable without a log directory.
+    checkpointer is required: interrupt() needs one, and an in-memory saver would
+    defeat the restart behaviour. recorder is optional so the graph is testable
+    without a log directory.
     """
 
     def _span(node: str):
@@ -117,10 +94,10 @@ def build_destructive_graph(
             }
 
     def await_confirmation(state: DestructiveState) -> DestructiveState:
-        """Pause for human approval.
+        """Pause for approval.
 
-        Everything before ``interrupt()`` must stay side-effect-free, because this
-        node's body re-executes when the graph resumes.
+        Everything before interrupt() must be side-effect-free, since this body re-runs
+        on resume.
         """
         token = ConfirmationToken(**(state["token"] or {}))
         ids = state.get("candidate_ids", [])
@@ -142,11 +119,7 @@ def build_destructive_graph(
             return {"decision": str(decision), "picks": picks}
 
     def apply_delete(state: DestructiveState) -> DestructiveState:
-        """Delete the previewed set, after re-validating consent.
-
-        The TOCTOU check sits here, immediately before the only irreversible step,
-        comparing the live match set against the hash captured at preview time.
-        """
+        """Delete the previewed set after re-checking the token."""
         with _span("apply_delete") as m:
             token = ConfirmationToken(**(state["token"] or {}))
             approved = state.get("candidate_ids", [])
@@ -193,10 +166,10 @@ def build_destructive_graph(
             }
 
     def abort(state: DestructiveState) -> DestructiveState:
-        """Nothing is deleted, and the reason says which it was.
+        """Nothing deleted.
 
-        An unclear reply is reported as unclear rather than as a cancellation, so
-        the user knows to ask again rather than assuming they declined.
+        Reports "unclear" separately from "cancelled", so the user knows to ask again
+        rather than assuming they declined.
         """
         with _span("abort") as m:
             m["status"] = "refused"
@@ -245,7 +218,7 @@ def build_destructive_graph(
 
 
 def _explain_token_error(error: TokenError) -> str:
-    """Turn a refusal into something a non-technical user can act on."""
+    """Turn a refused token into something a user can act on."""
     if error is TokenError.SET_CHANGED:
         return (
             "The set of matching reports changed while you were deciding, so nothing "

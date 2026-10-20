@@ -14,9 +14,7 @@ from analyst_assistant.safety.masking import (
     scrub,
 )
 
-# --------------------------------------------------------------------------
 # Pseudonymisation
-# --------------------------------------------------------------------------
 
 
 def test_pseudonym_is_stable_for_the_same_input():
@@ -39,9 +37,7 @@ def test_pseudonym_is_recognisable_and_short():
     assert len(label) == len("CUST-") + 6
 
 
-# --------------------------------------------------------------------------
 # Tripwire: true positives
-# --------------------------------------------------------------------------
 
 
 def test_email_is_redacted_and_recorded():
@@ -63,9 +59,7 @@ def test_multiple_findings_are_counted_per_kind():
     assert r.total == 2
 
 
-# --------------------------------------------------------------------------
 # Tripwire: false positives must not occur
-# --------------------------------------------------------------------------
 
 
 def test_clean_analytical_text_is_untouched():
@@ -89,13 +83,11 @@ def test_empty_text_is_handled():
     assert not scrub("").fired
 
 
-# --------------------------------------------------------------------------
 # DataFrame masking
-# --------------------------------------------------------------------------
 
 
 def test_direct_identifier_columns_are_dropped():
-    """These should never arrive -- the scoped views omit them.
+    """These should never arrive, the scoped views omit them.
 
     Arrival means an upstream control failed, so masking records it.
     """

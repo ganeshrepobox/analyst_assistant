@@ -1,7 +1,7 @@
 """Tests for the destructive-operation subgraph.
 
-The centrepiece is :func:`test_confirmation_survives_a_process_restart`, which
-proves the pause is durable rather than merely in-memory -- the property that
+The centrepiece is test_confirmation_survives_a_process_restart, which
+proves the pause is durable rather than merely in-memory, the property that
 justifies LangGraph over a hand-rolled loop.
 """
 
@@ -55,9 +55,7 @@ def _start(graph, *, user_id=ALICE, request, thread_id="thread-a", cfg=None):
     )
 
 
-# --------------------------------------------------------------------------
 # The pause
-# --------------------------------------------------------------------------
 
 
 def test_graph_pauses_with_a_preview_before_deleting_anything(lib, checkpoint_path):
@@ -94,9 +92,7 @@ def test_no_matches_short_circuits_without_a_confirmation_prompt(lib, checkpoint
     assert out["outcome"] == "nothing_matched"
 
 
-# --------------------------------------------------------------------------
-# Durability -- the reason for LangGraph
-# --------------------------------------------------------------------------
+# Durability, the reason for LangGraph
 
 
 def test_confirmation_survives_a_process_restart(lib, checkpoint_path):
@@ -151,9 +147,7 @@ def test_resolution_is_not_repeated_on_resume(lib, checkpoint_path):
     assert lib.get(intruder.id, owner_id=ALICE) is not None
 
 
-# --------------------------------------------------------------------------
 # Decisions
-# --------------------------------------------------------------------------
 
 
 def test_cancelling_deletes_nothing(lib, checkpoint_path):
@@ -231,13 +225,11 @@ def test_an_unclear_reply_deletes_nothing_and_says_so(lib, checkpoint_path):
     assert len(lib.list_live(owner_id=ALICE)) == 1
 
 
-# --------------------------------------------------------------------------
 # Scope shapes the brief names explicitly
-# --------------------------------------------------------------------------
 
 
 def test_delete_everything_from_this_conversation(lib, checkpoint_path):
-    """'Delete all the reports we made in this conversation' -- a scope predicate."""
+    """'Delete all the reports we made in this conversation', a scope predicate."""
     _seed(lib, ALICE, ["One", "Two"], thread="this-chat")
     _seed(lib, ALICE, ["Elsewhere"], thread="other-chat")
     graph = _graph(lib, checkpoint_path)
@@ -250,9 +242,7 @@ def test_delete_everything_from_this_conversation(lib, checkpoint_path):
     assert [r.title for r in lib.list_live(owner_id=ALICE)] == ["Elsewhere"]
 
 
-# --------------------------------------------------------------------------
 # Authorization
-# --------------------------------------------------------------------------
 
 
 def test_another_users_reports_are_never_candidates(lib, checkpoint_path):
@@ -269,9 +259,7 @@ def test_another_users_reports_are_never_candidates(lib, checkpoint_path):
     assert len(lib.list_live(owner_id=BOB)) == 1
 
 
-# --------------------------------------------------------------------------
 # Audit
-# --------------------------------------------------------------------------
 
 
 def test_deletions_are_audited_and_reversible(lib, checkpoint_path):

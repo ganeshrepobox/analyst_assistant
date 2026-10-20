@@ -1,29 +1,13 @@
-"""BigQuery access: dry-run cost control, result cache, and record/replay.
+"""BigQuery access: dry-run cost check, result cache, record/replay.
 
-Wraps the ``BigQueryRunner`` supplied with the assignment and adds what a
-production path needs around it.
+One entry point, so the byte ceiling and the cache apply to every query.
 
-Cost is checked before the money is spent
------------------------------------------
-BigQuery bills on bytes scanned, so a check *after* execution is a receipt, not a
-control. Every query is dry-run first (free), the estimate is tested against the
-remaining budget, and only then is it executed with ``maximum_bytes_billed`` set as
-a second, server-side guarantee.
+Cost is checked before the query runs. BigQuery bills on bytes scanned, so
+checking afterwards is only a receipt. The dry run itself is free.
 
-Why a result cache instead of an offline database replica
----------------------------------------------------------
-A DuckDB copy of the dataset would let a reviewer run the prototype without Google
-Cloud, but the BigQuery dialect divergence is load-bearing -- backtick-quoted
-``project.dataset.table``, ``DATE_TRUNC(date, MONTH)`` argument order,
-``SAFE_DIVIDE``, no dry run -- so it would mean two dialects and two validators. It
-also cannot be seeded without the access it was meant to replace.
-
-A content-addressed cache solves the same problem and three more: it gives a
-credential-free review (replay mode), the requirement-5 cost cache, deterministic
-test fixtures, and network-free tests. One dialect, one code path.
-
-Google libraries are imported lazily, so replay mode works on a machine with no
-credentials and no ``google-cloud-bigquery`` installed.
+Replay mode answers from recorded results and never imports a Google library, so
+the prototype runs without a GCP account. It is also where the test fixtures come
+from.
 """
 
 from __future__ import annotations
@@ -46,8 +30,8 @@ from ..safety.schema import DATASET
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
 
-#: Server-side ceiling, applied in addition to the in-process budget, so a bug in
-#: our own accounting still cannot produce an unbounded bill.
+# Server-side ceiling, applied in addition to the in-process budget, so a bug in
+# our own accounting still cannot produce an unbounded bill.
 DEFAULT_MAX_BYTES_BILLED = 2_000_000_000
 
 
@@ -65,8 +49,7 @@ class CacheMode(StrEnum):
 class ReplayMiss(LookupError):
     """Replay mode was asked for a query that was never recorded.
 
-    A distinct type so this is never reported as a warehouse failure, which would
-    misstate why the answer is absent.
+    Its own type, so it is never reported as a warehouse failure.
     """
 
     def __init__(self, key: str) -> None:
@@ -92,9 +75,8 @@ class BudgetExceeded(RuntimeError):
 def fingerprint(sql: str) -> str:
     """Content address for a query.
 
-    Whitespace and case are normalised so a re-rendered identical query still hits.
-    Literals are deliberately not normalised -- a different date range is a
-    different question with a different answer.
+    Whitespace and case are normalised; literals are not, since a different date
+    range is a different question.
     """
     return sha256(re.sub(r"\s+", " ", sql.strip().lower()).encode()).hexdigest()[:20]
 
@@ -114,12 +96,7 @@ class CachedResult:
         return len(self.rows)
 
     def age_description(self) -> str:
-        """How old this is, in words.
-
-        Used when a cached figure is served during an outage. Degradation has to
-        announce itself: a stale number presented as current is worse than none,
-        because the user cannot tell they should discount it.
-        """
+        """How old this is, in words. Shown when a cached figure is served."""
         seconds = (datetime.now(UTC) - datetime.fromisoformat(self.recorded_at)).total_seconds()
         if seconds < 90:
             return "just now"
@@ -136,15 +113,11 @@ class CachedResult:
 
 
 class ResultCache:
-    """Content-addressed store of query results, as JSON files on disk.
+    """Query results as JSON files on disk, addressed by query fingerprint.
 
-    JSON rather than Parquet so fixtures are readable in a diff. After the
-    validator's LIMIT, results are tens to hundreds of rows, so the size difference
-    does not matter and reviewability does.
-
-    Note there is deliberately no ``__len__``: defining it would make an *empty*
-    cache falsy, and ``cache or ResultCache()`` would then silently discard a
-    caller's cache. That bug wrote test fixtures into the repo before it was caught.
+    JSON rather than Parquet so fixtures are readable in a diff. Note there is no
+    __len__: it would make an empty cache falsy, and `cache or ResultCache()` then
+    silently discards a caller's cache. That bug wrote fixtures into the repo once.
     """
 
     def __init__(self, directory: str | Path = "fixtures", *, ttl_seconds: float | None = None):
@@ -158,9 +131,8 @@ class ResultCache:
     def get(self, sql: str, *, ignore_ttl: bool = False) -> CachedResult | None:
         """Look up a recorded result.
 
-        Args:
-            ignore_ttl: Return an expired entry anyway -- used when a dependency is
-                down and a clearly-labelled stale answer beats no answer.
+        ignore_ttl returns an expired entry anyway, used when a dependency is down and a
+        labelled stale answer beats nothing.
         """
         path = self._path(fingerprint(sql))
         if not path.exists():
@@ -197,12 +169,7 @@ class ResultCache:
 
 @dataclass
 class RateLimiter:
-    """Minimum spacing between calls to a rate-limited dependency.
-
-    The Gemini free tier allows roughly ten requests per minute. Discovering that
-    by collecting 429s wastes the quota it is meant to protect, so calls are spaced
-    proactively and the retry path is left for genuine overload.
-    """
+    """Minimum spacing between calls. The Gemini free tier allows about 10/minute."""
 
     min_interval_seconds: float = 6.5
     _last_call: float | None = field(default=None, repr=False)
@@ -210,8 +177,7 @@ class RateLimiter:
     def wait(self, *, sleep=time.sleep, clock=time.monotonic) -> float:
         """Block until the next call is allowed. Returns the delay applied.
 
-        The first call never waits: starting from 0.0 would stall it by a full
-        interval on a monotonic clock that begins near zero.
+        The first call never waits.
         """
         now = clock()
         if self._last_call is None:
@@ -245,22 +211,12 @@ class QueryResult:
 
     @property
     def is_empty(self) -> bool:
-        """Empty is a distinct outcome, not an error.
-
-        It usually means a well-formed question whose filter excluded everything --
-        a date range outside the data, say -- and the right response is to diagnose
-        why rather than report a failure or invent a zero.
-        """
+        """Empty is an outcome, not an error, usually a filter that excluded everything."""
         return self.df.empty
 
 
 class BigQueryGateway:
-    """The only path to BigQuery.
-
-    A single entry point by design: the dry run, the byte ceiling, the cache, the
-    breaker and the replay switch must apply to *every* query, and the reliable way
-    to ensure that is to leave nowhere else to go.
-    """
+    """The only path to BigQuery, so the cost checks apply to every query."""
 
     def __init__(
         self,
@@ -282,7 +238,7 @@ class BigQueryGateway:
 
     @property
     def client(self) -> Any:
-        """The BigQuery client, created on first use and never in replay mode."""
+        """BigQuery client, created on first use and never in replay mode."""
         if self.mode is CacheMode.REPLAY:
             raise RuntimeError("replay mode must not construct a BigQuery client")
         if self._client is None:
@@ -313,13 +269,8 @@ class BigQueryGateway:
     ) -> QueryResult:
         """Run a query, or explain why it was not run.
 
-        The order is the point of this method: cache, replay check, dry run, budget
-        check, execute.
-
-        Raises:
-            ReplayMiss: replay mode with no recording for this query.
-            BudgetExceeded: the dry-run estimate exceeds the remaining budget.
-            CircuitOpenError: BigQuery is presumed down and no cached result exists.
+        Order matters: cache, replay check, dry run, budget check, execute. Raises
+        ReplayMiss, BudgetExceeded or CircuitOpenError.
         """
         # An exact repeat within the turn is the cheapest possible answer.
         cached = self.cache.get(sql)
@@ -390,10 +341,9 @@ class BigQueryGateway:
         return QueryResult(df=df, bytes_billed=billed)
 
     def table_schema(self, table: str) -> list[dict[str, Any]]:
-        """Live schema for one table, used by ``doctor``.
+        """Live schema for one table, used by doctor to spot drift from safety.schema.
 
-        Confirms the hard-coded classification in :mod:`..safety.schema` still
-        matches reality. Silent drift could mean a new, unclassified PII column.
+        Drift could mean a new column nobody has classified.
         """
         if self.mode is CacheMode.REPLAY:
             return []

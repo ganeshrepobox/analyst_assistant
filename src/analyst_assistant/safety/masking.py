@@ -1,26 +1,11 @@
-"""Output masking and the egress tripwire.
+"""Pseudonymising ids, masking result columns, and a regex sweep before output.
 
-Three jobs, in order of how much they are relied upon:
+The regex is not the main PII control. The scoped views are, since they do not
+contain the columns at all. This catches a failure of those, so a hit is counted
+as a metric.
 
-1. **Pseudonymisation** -- turn a customer id into a stable, non-reversible label so
-   that "who are my top customers?" stays answerable without disclosing identity.
-2. **DataFrame masking** -- defence in depth over query results.
-3. **The text tripwire** -- a deliberately narrow regex sweep over anything about to
-   be shown, logged, or sent to the model.
-
-The tripwire is not the PII control. The real control is structural: direct
-identifiers are absent from the scoped views (see ``entitlements``), so they cannot
-be selected. The tripwire exists to *detect the failure of that control*, which is
-why a firing is recorded as a defect and alerted on rather than quietly cleaned up.
-See ``docs/01-architecture.md`` section 9.
-
-Ordering matters more than the rules
-------------------------------------
-* Masking runs **before** report synthesis, so raw personal data never enters the
-  model's context. Masking at print time would leave the LLM having already seen it.
-* The user's question and the generated SQL are scrubbed **before** being written to
-  the event log, or a predicate such as ``WHERE email = 'x@y.com'`` is persisted into
-  the trace that was meant to make the system auditable.
+Two orderings matter: masking runs before the report is written, so raw values
+never reach the model, and questions and SQL are scrubbed before being logged.
 """
 
 from __future__ import annotations
@@ -39,7 +24,7 @@ PSEUDONYM_PREFIX = "CUST"
 _PSEUDONYM_LENGTH = 6
 
 # Narrow by design. Each pattern targets a format that is unambiguously an
-# identifier, because a false positive here corrupts a legitimate answer -- product
+# identifier, because a false positive here corrupts a legitimate answer - product
 # SKUs, order ids and prices must survive untouched.
 _PATTERNS: dict[str, re.Pattern[str]] = {
     "email": re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]{2,}\b"),
@@ -66,11 +51,7 @@ class ScrubResult:
 
     @property
     def fired(self) -> bool:
-        """True if anything was redacted.
-
-        A true value is a **defect signal**, not a success. It means personal data
-        reached a layer where it should already have been impossible.
-        """
+        """True if anything was redacted, which means an earlier layer leaked."""
         return bool(self.findings)
 
     @property
@@ -79,24 +60,18 @@ class ScrubResult:
 
 
 def pseudonymize(value: object, *, salt: str = "", prefix: str = PSEUDONYM_PREFIX) -> str:
-    """Map an identifier to a stable, non-reversible label.
+    """Map an id to a stable, non-reversible label.
 
-    Stable so that the same customer carries the same label within and across
-    reports, which is what makes ranking and follow-up questions coherent.
-
-    The salt should be a per-deployment secret. Without one, the space of customer
-    ids in this dataset is small enough to enumerate by brute force, so an unsalted
-    hash is pseudonymisation in name only.
+    Stable so the same customer keeps the same label across a report. The salt should
+    be a per-deployment secret; unsalted, this dataset's id range is small enough to
+    enumerate.
     """
     digest = hashlib.sha256(f"{salt}:{value}".encode()).hexdigest()
     return f"{prefix}-{digest[:_PSEUDONYM_LENGTH]}"
 
 
 def scrub(text: str) -> ScrubResult:
-    """Redact identifier-shaped substrings from free text.
-
-    Applied to model output before display, and to questions and SQL before logging.
-    """
+    """Redact identifier-shaped text. Used on output and before logging."""
     if not text:
         return ScrubResult(text=text)
 
@@ -119,15 +94,11 @@ def _columns_by_class(pii_class: PiiClass) -> frozenset[str]:
 
 
 def mask_dataframe(df: pd.DataFrame, *, salt: str = "") -> tuple[pd.DataFrame, dict[str, int]]:
-    """Mask a query result before it is rendered or sent to the model.
+    """Mask a result frame before it is rendered or sent to the model.
 
-    * Direct-identifier columns are dropped outright. They should never be present --
-      the scoped views omit them -- so their presence is logged as a tripwire hit.
-    * Join-key columns are replaced in place by pseudonyms, preserving groupings and
-      ordering so that "top customers" still ranks correctly.
-
-    Returns:
-        The masked frame and a mapping of what was acted on, for metrics.
+    Direct identifiers are dropped. They should never be here, so it is counted as a
+    tripwire hit. Join keys are replaced in place with pseudonyms, so ranking still
+    works.
     """
     findings: dict[str, int] = {}
     out = df.copy()
@@ -148,9 +119,5 @@ def mask_dataframe(df: pd.DataFrame, *, salt: str = "") -> tuple[pd.DataFrame, d
 
 
 def scrub_for_log(text: str) -> str:
-    """Convenience wrapper for the logging path.
-
-    Separate from :func:`scrub` so that the intent is explicit at call sites: this
-    one protects the audit trail, not the user-facing output.
-    """
+    """Scrub for the logging path. Named separately so call sites read clearly."""
     return scrub(text).text

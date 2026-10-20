@@ -1,6 +1,6 @@
 # Setup
 
-Two credentials are needed: a **Gemini API key** and **BigQuery access**. Neither requires a
+Two credentials are needed: a Gemini API key and BigQuery access. Neither requires a
 credit card.
 
 ---
@@ -17,8 +17,8 @@ development runs cost nothing.
 
 ## 2. BigQuery access
 
-Public-dataset *storage* is free, but queries bill to **your own** project, so you need a
-project. The **BigQuery Sandbox** gives 1 TiB/month of free compute with **no billing account**.
+Public-dataset *storage* is free, but queries bill to your own project, so you need a
+project. The BigQuery Sandbox gives 1 TiB/month of free compute with no billing account.
 
 1. Create a project at <https://console.cloud.google.com/projectcreate>
 2. Enable the BigQuery API:
@@ -27,7 +27,7 @@ project. The **BigQuery Sandbox** gives 1 TiB/month of free compute with **no bi
 
 Then pick one authentication path:
 
-### Path A — gcloud ADC (recommended)
+### Path A: gcloud ADC (recommended)
 
 No key file exists, so there is nothing secret to leak or accidentally commit.
 
@@ -40,17 +40,17 @@ gcloud config set project YOUR_PROJECT_ID
 Leave `GOOGLE_APPLICATION_CREDENTIALS` unset. Restart the shell after installing so `gcloud`
 lands on `PATH`.
 
-### Path B — service-account JSON (no SDK install)
+### Path B: service-account JSON (no SDK install)
 
 Faster if the SDK install is awkward, but produces a secret file.
 
 1. <https://console.cloud.google.com/iam-admin/serviceaccounts> → *Create service account*
-2. Grant **BigQuery User** (`roles/bigquery.user`) — needed to run query jobs
+2. Grant BigQuery User (`roles/bigquery.user`), needed to run query jobs
 3. *Keys* → *Add key* → *JSON* → download
 4. Set `GOOGLE_APPLICATION_CREDENTIALS` in `.env` to that path
 
 The key is a credential. `.gitignore` already excludes `*-service-account*.json`,
-`*credentials*.json` and `gcp-key*.json` — keep it outside the repo anyway.
+`*credentials*.json` and `gcp-key*.json`, keep it outside the repo anyway.
 
 ## 3. Install and verify
 
@@ -61,8 +61,8 @@ pip install -r requirements.txt
 python -m analyst_assistant doctor
 ```
 
-`doctor` checks credentials, lists the Gemini models this key can **actually** reach, and
-dry-runs one BigQuery query. Run it before anything else — credentials and model availability
+`doctor` checks credentials, lists the Gemini models this key can actually reach, and
+dry-runs one BigQuery query. Run it before anything else, credentials and model availability
 are the two things most likely to derail a build, and both fail in confusing ways later.
 
 ### Known trap
@@ -79,5 +79,5 @@ python -m analyst_assistant chat
 ```
 
 Replay serves recorded query results from `fixtures/` and needs no GCP project and no API key.
-It only answers pre-recorded questions — enough to exercise the safety, confirmation,
+It only answers pre-recorded questions, enough to exercise the safety, confirmation,
 resilience and observability paths end to end.

@@ -1,8 +1,8 @@
 """Tests for entitlement scoping.
 
-The headline test is :func:`test_revenue_query_is_scoped_without_naming_products`,
-which is a regression test for a real bypass in an earlier design -- see the module
-docstring of ``safety/entitlements.py``.
+The headline test is test_revenue_query_is_scoped_without_naming_products,
+which is a regression test for a real bypass in an earlier design, see the module
+docstring of safety/entitlements.py.
 """
 
 from __future__ import annotations
@@ -27,9 +27,7 @@ def _cte_names(sql: str) -> list[str]:
     return [c.alias_or_name for c in tree.find_all(exp.CTE)]
 
 
-# --------------------------------------------------------------------------
 # Composition mechanics
-# --------------------------------------------------------------------------
 
 
 def test_all_four_scoped_views_are_prepended_in_dependency_order():
@@ -40,7 +38,7 @@ def test_all_four_scoped_views_are_prepended_in_dependency_order():
 def test_model_ctes_are_preserved_and_come_after_ours():
     """Regression: an earlier implementation silently discarded the model's CTEs.
 
-    BigQuery requires define-before-use, so ours must come first -- but the model's
+    BigQuery requires define-before-use, so ours must come first, but the model's
     must survive, or the query returned is not the query that was validated.
     """
     out = compose(
@@ -60,21 +58,18 @@ def test_composed_sql_is_valid_bigquery():
     sqlglot.parse_one(out, dialect="bigquery")  # raises if malformed
 
 
-# --------------------------------------------------------------------------
 # The bypass this design exists to close
-# --------------------------------------------------------------------------
 
 
 def test_revenue_query_is_scoped_without_naming_products():
-    """THE regression test.
+    """The regression test for the bypass described in entitlements.py.
 
-    An earlier design filtered references to `products`. This query names no
-    products table at all, so that design applied no filter and the caller saw
-    company-wide revenue. Because `order_items.sale_price` is the only revenue
-    column in this dataset, that was the common case, not an edge case.
+    An earlier design filtered references to products. This query names no products
+    table, so no filter was applied and the caller saw company-wide revenue. Since
+    sale_price is the only revenue column here, that was the common case.
 
-    Under the current design the scope is carried by s_order_items' inner join to
-    the filtered s_products, so it cannot be sidestepped by omitting a table.
+    Now the scope travels through s_order_items' join to the filtered s_products, so
+    leaving a table out does not sidestep it.
     """
     out = compose("SELECT SUM(sale_price) AS revenue FROM s_order_items", RESTRICTED)
 
@@ -90,9 +85,7 @@ def test_unrestricted_user_gets_no_category_filter_but_still_gets_scoped_views()
     assert _cte_names(out) == ["s_products", "s_order_items", "s_orders", "s_users"]
 
 
-# --------------------------------------------------------------------------
 # Structural PII removal
-# --------------------------------------------------------------------------
 
 
 def test_direct_identifiers_are_absent_from_the_scoped_views():
@@ -118,9 +111,7 @@ def test_num_of_item_is_withheld_from_scoped_orders():
     assert "num_of_item" not in ctes["s_orders"]
 
 
-# --------------------------------------------------------------------------
 # SQL literal safety
-# --------------------------------------------------------------------------
 
 
 def test_category_with_apostrophe_is_escaped_not_broken():
@@ -146,9 +137,7 @@ def test_category_values_cannot_inject_sql():
     assert "x') OR 1=1 --" in literals
 
 
-# --------------------------------------------------------------------------
 # Scope reporting
-# --------------------------------------------------------------------------
 
 
 def test_scope_is_described_for_the_user():

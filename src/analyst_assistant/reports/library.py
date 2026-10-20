@@ -1,25 +1,10 @@
-"""The Saved Reports library: storage, ownership, soft delete and audit.
+"""Saved reports: storage, ownership, soft delete and an audit trail.
 
-Implements the data half of requirement 3. The confirmation flow that guards
-deletion lives in :mod:`.confirmation`; the graph wiring lives in the agent.
+Ownership is enforced in SQL. Every query carries owner_id, so another user's
+report is never in a result set to begin with.
 
-Three properties this module guarantees
----------------------------------------
-**Ownership is enforced in SQL, not in application logic.** Every query carries
-``owner_id = ?``. A report belonging to someone else is not "filtered out later" --
-it is never in a result set in the first place, so "delete all my reports" cannot
-reach another user's library even if every layer above this one is wrong.
-
-**Deletion is soft and audited.** A ``deleted_at`` timestamp plus an append-only
-audit row. Nothing in the brief requires irreversible erasure, and reversibility is
-the right default for a destructive action taken on a model's interpretation of a
-sentence. ``/undo`` restores the most recent delete batch.
-
-**Deletes are resolved to explicit ids, never executed as a predicate.** The caller
-resolves candidates, shows them, obtains confirmation, and only then deletes *those
-ids*. ``soft_delete`` therefore takes a list of ids and nothing else -- there is
-deliberately no ``delete_where(text=...)`` entry point, because its existence would
-invite the unsafe pattern.
+soft_delete takes explicit ids and nothing else. There is no delete_where(), on
+purpose: the caller has to resolve and confirm first.
 """
 
 from __future__ import annotations
@@ -79,24 +64,17 @@ class Report:
         return self.deleted_at is not None
 
     def summary_line(self, index: int | None = None) -> str:
-        """One row of the deletion preview.
-
-        The preview is the entire basis on which a user consents, so it shows the
-        title and the date -- enough to recognise a report -- rather than an opaque
-        id.
-        """
+        """One row of the deletion preview: title and date, not an opaque id."""
         stamp = self.created_at[:10]
         prefix = f"{index}. " if index is not None else ""
         return f"{prefix}{self.title}  ({stamp}, {self.id[:8]})"
 
 
 class ReportLibrary:
-    """SQLite-backed report store.
+    """SQLite report store.
 
-    SQLite in the prototype, Cloud SQL Postgres in production; the SQL is
-    intentionally portable between them. The audit insert shares a transaction with
-    the delete it records, which is the main reason this is a relational store
-    rather than a document one.
+    Postgres in production; the SQL is kept portable. The audit insert shares a
+    transaction with the delete it records.
     """
 
     def __init__(self, db_path: str | Path = "analyst_assistant.sqlite") -> None:
@@ -108,8 +86,6 @@ class ReportLibrary:
 
     def close(self) -> None:
         self._conn.close()
-
-    # -- internal -----------------------------------------------------------
 
     def _row_to_report(self, row: sqlite3.Row) -> Report:
         return Report(
@@ -137,8 +113,6 @@ class ReportLibrary:
             (_now(), actor_id, action, report_id, trace_id, detail),
         )
 
-    # -- writes -------------------------------------------------------------
-
     def save(
         self,
         *,
@@ -150,9 +124,7 @@ class ReportLibrary:
     ) -> Report:
         """Persist a report.
 
-        ``thread_id`` is recorded because requirement 3 names "delete all the
-        reports we made in this conversation" -- a *scope* predicate rather than a
-        text match, which is unanswerable without provenance on every row.
+        thread_id is stored so "delete the reports from this conversation" is answerable.
         """
         report = Report(
             id=uuid.uuid4().hex,
@@ -181,16 +153,11 @@ class ReportLibrary:
     def soft_delete(
         self, *, owner_id: str, report_ids: list[str], trace_id: str | None = None
     ) -> list[str]:
-        """Soft-delete specific reports owned by ``owner_id``.
+        """Soft-delete specific reports owned by owner_id.
 
-        Takes explicit ids only. There is no predicate-based delete by design: the
-        caller must resolve, preview and confirm first, and the ids deleted here are
-        the ones that were shown.
-
-        Returns:
-            The ids actually deleted. Ids not owned by the caller, already deleted,
-            or non-existent are silently absent -- which is what makes the operation
-            idempotent and safe to retry after an interrupted confirmation.
+        Explicit ids only; the caller resolves, previews and confirms first. Returns the
+        ids actually deleted, so ids that are not owned or already deleted are simply
+        absent, which makes this safe to retry.
         """
         if not report_ids:
             return []
@@ -223,9 +190,8 @@ class ReportLibrary:
     ) -> list[str]:
         """Restore the caller's most recent deletion.
 
-        Keyed on the newest ``deleted_at`` rather than a separate batch column:
-        every report deleted in one call shares that timestamp, so this reverses
-        exactly one user action, which is what a user means by "undo".
+        Keyed on the newest deleted_at: everything deleted in one call shares that
+        timestamp, so this reverses exactly one action.
         """
         cursor = self._conn.execute(
             "SELECT MAX(deleted_at) AS last FROM reports "
@@ -249,14 +215,10 @@ class ReportLibrary:
         self._conn.commit()
         return restored
 
-    # -- reads --------------------------------------------------------------
-
     def get(self, report_id: str, *, owner_id: str) -> Report | None:
-        """Fetch one report. Returns ``None`` if the caller does not own it.
+        """Fetch one report, or None if the caller does not own it.
 
-        Not-found and not-owned are deliberately indistinguishable: telling a user
-        that a report exists but belongs to someone else leaks the existence of
-        other people's work.
+        Not-found and not-owned are indistinguishable on purpose.
         """
         cursor = self._conn.execute(
             "SELECT * FROM reports WHERE id = ? AND owner_id = ?", (report_id, owner_id)
@@ -282,13 +244,8 @@ class ReportLibrary:
     ) -> list[Report]:
         """Resolve a deletion request to an explicit candidate set.
 
-        Supports both shapes requirement 3 names:
-
-        * ``text`` -- "delete all reports mentioning Client X" (title and body)
-        * ``thread_id`` -- "delete all the reports we made in this conversation"
-
-        Only live reports owned by the caller are ever candidates. Combining
-        filters narrows (AND), so a thread-scoped text match is expressible.
+        text matches title and body; thread_id scopes to one conversation. Filters
+        combine with AND. Only live reports owned by the caller are candidates.
         """
         clauses = ["owner_id = ?", "deleted_at IS NULL"]
         params: list[Any] = [owner_id]
@@ -315,12 +272,7 @@ class ReportLibrary:
         return [self._row_to_report(r) for r in cursor.fetchall()]
 
     def audit_trail(self, *, report_id: str | None = None) -> list[dict[str, Any]]:
-        """Read the audit log.
-
-        Not owner-scoped: the audit log is an operator and compliance artifact, and
-        access to it is an infrastructure-level decision rather than one the agent
-        makes per request.
-        """
+        """Read the audit log. Not owner-scoped: it is an operator artifact."""
         if report_id:
             cursor = self._conn.execute(
                 "SELECT * FROM audit WHERE report_id = ? ORDER BY id", (report_id,)

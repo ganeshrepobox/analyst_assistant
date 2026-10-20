@@ -1,31 +1,14 @@
-"""The confirmation gate for destructive operations. Implements requirement 3.
+"""Consent rules for deleting reports.
 
-Four ideas, each earning its complexity
----------------------------------------
+The token holds a hash of the ids that were previewed. If the matching set
+changes while the user is deciding, the approval is refused and they see the new
+list.
 
-**1. Resolve, then confirm, then act on the resolved set.**
-The ids presented in the preview are the ids deleted. The model never gets a second
-chance to reinterpret "the ones I said" after approval. This is the central failure
-mode of agentic destructive actions, and it is closed by passing an explicit id set
-as *data* to deterministic code -- never by giving the model a delete tool it can
-re-parameterise.
+Friction scales with the number of reports: "yes" is enough for one or two, a
+typed phrase for a bulk delete. Requiring the phrase every time would just teach
+people to type it without reading.
 
-**2. Friction scales with blast radius.**
-Requirement 3 asks for a strict confirmation flow "without breaking UX". Uniform
-maximum friction is the lazy reading and it backfires: forcing a typed phrase to
-delete one report trains people to type it without reading, which destroys the
-value of the gate on the day it matters. So one or two reports take a natural
-"yes"; a bulk delete requires a typed phrase that states the count.
-
-**3. The token binds to the resolved set (TOCTOU).**
-Between preview and confirmation the world can change -- a new report may now match
-"mentioning Client X", or the process may have restarted. The token carries a hash
-of the exact id set that was shown, so if the set has shifted the confirmation is
-refused and the user is re-prompted with the new preview. Consent is to a specific
-list, not to a sentence.
-
-**4. Tokens expire.**
-A stale approval sitting in a checkpoint is not consent. Five minutes.
+Ambiguous replies always resolve toward deleting less.
 """
 
 from __future__ import annotations
@@ -37,10 +20,10 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 
-#: Above this many reports, a natural-language "yes" is no longer sufficient.
+# Above this many reports, a natural-language "yes" is no longer sufficient.
 BULK_THRESHOLD = 3
 
-#: Seconds a confirmation token stays valid.
+# Seconds a confirmation token stays valid.
 TOKEN_TTL_SECONDS = 300
 
 _AFFIRMATIVE = frozenset(
@@ -69,11 +52,7 @@ class TokenError(StrEnum):
 
 
 def _hash_ids(report_ids: list[str]) -> str:
-    """Order-independent fingerprint of an id set.
-
-    Sorted so that a differently ordered but identical set still matches -- the
-    guard is about *which* reports, not the order they were listed in.
-    """
+    """Order-independent fingerprint of an id set."""
     joined = "\n".join(sorted(report_ids))
     return hashlib.sha256(joined.encode()).hexdigest()[:16]
 
@@ -95,11 +74,7 @@ class ConfirmationToken:
 
     @property
     def required_phrase(self) -> str:
-        """The phrase a bulk delete must be confirmed with.
-
-        States the count, so the user is re-confronted with the blast radius at the
-        moment of consent rather than only in the preview above it.
-        """
+        """Phrase a bulk delete must be confirmed with. States the count."""
         return f"DELETE {self.count} REPORTS"
 
     def expired(self, *, now: float | None = None) -> bool:
@@ -108,7 +83,7 @@ class ConfirmationToken:
     def check(
         self, *, user_id: str, report_ids: list[str], now: float | None = None
     ) -> TokenError | None:
-        """Validate this token against the live state. ``None`` means valid."""
+        """Validate against live state. None means valid."""
         if self.expired(now=now):
             return TokenError.EXPIRED
         if user_id != self.user_id:
@@ -133,13 +108,10 @@ def issue_token(
 
 
 def parse_reply(reply: str, *, token: ConfirmationToken) -> tuple[Decision, list[int]]:
-    """Interpret a free-text reply to a confirmation prompt.
+    """Interpret a reply to a confirmation prompt.
 
-    Returns the decision and, for :attr:`Decision.SUBSET`, the 1-based indices the
-    user named.
-
-    Ambiguity resolves to :attr:`Decision.UNCLEAR`, never to confirmation. The cost
-    of re-asking is one turn; the cost of a false positive is deleted work.
+    Returns the decision and, for SUBSET, the 1-based indices named. Anything
+    ambiguous returns UNCLEAR rather than confirming.
     """
     text = reply.strip().lower()
     if not text:
@@ -160,7 +132,7 @@ def parse_reply(reply: str, *, token: ConfirmationToken) -> tuple[Decision, list
     # A subset selection such as "delete 1 and 3" or "just 2".
     #
     # A bare number is ALWAYS an index, never a count. For a two-item preview,
-    # "2" is ambiguous between "item 2" and "all 2" -- and the two readings differ
+    # "2" is ambiguous between "item 2" and "all 2" - and the two readings differ
     # by a deleted report. Resolving that ambiguity toward *less* deletion is the
     # only safe direction, so "all" must be said explicitly to mean everything.
     indices = [int(n) for n in re.findall(r"\b(\d{1,3})\b", reply)]

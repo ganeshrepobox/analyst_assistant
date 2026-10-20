@@ -1,6 +1,6 @@
 """Event log, counters and trace retrieval.
 
-The important one is :func:`test_pii_is_scrubbed_before_being_logged`: the event log
+The important one is test_pii_is_scrubbed_before_being_logged: the event log
 exists to make the system auditable, and writing personal data into it would make
 that artifact itself a leak.
 """

@@ -11,9 +11,7 @@ import pytest
 
 from analyst_assistant.safety.sql_guard import MAX_ROW_LIMIT, validate
 
-# --------------------------------------------------------------------------
 # Queries that must be accepted
-# --------------------------------------------------------------------------
 
 
 def test_simple_aggregate_is_allowed():
@@ -52,9 +50,7 @@ def test_set_operations_are_allowed():
     assert r.ok, r.reason
 
 
-# --------------------------------------------------------------------------
 # Read-only enforcement
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -96,9 +92,7 @@ def test_semicolon_inside_a_string_literal_is_not_a_second_statement():
     assert r.ok, r.reason
 
 
-# --------------------------------------------------------------------------
 # Table whitelist
-# --------------------------------------------------------------------------
 
 
 def test_direct_base_table_reference_is_rejected():
@@ -130,9 +124,7 @@ def test_cte_may_not_shadow_a_scoped_view():
     assert any("may not reuse a scoped view name" in v for v in r.violations)
 
 
-# --------------------------------------------------------------------------
 # PII
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -154,9 +146,7 @@ def test_analytic_geography_is_still_allowed():
     assert r.ok, r.reason
 
 
-# --------------------------------------------------------------------------
 # Fail-closed behaviour
-# --------------------------------------------------------------------------
 
 
 def test_unparseable_sql_is_rejected_not_passed_through():
@@ -169,9 +159,7 @@ def test_empty_query_is_rejected():
     assert not validate("").ok
 
 
-# --------------------------------------------------------------------------
 # Row limits
-# --------------------------------------------------------------------------
 
 
 def test_missing_limit_is_injected():

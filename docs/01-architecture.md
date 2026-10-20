@@ -1,11 +1,11 @@
-# High-Level Design — Executive Data Analysis Agent
+# High-Level Design, Executive Data Analysis Agent
 
 **Client:** OpsFleet (retail company engagement)
 **Audience:** non-technical executives asking analytical questions in natural language
-**Data:** `bigquery-public-data.thelook_ecommerce` — `orders`, `order_items`, `products`, `users`
+**Data:** `bigquery-public-data.thelook_ecommerce`, `orders`, `order_items`, `products`, `users`
 
 This document is the production design. Where the prototype differs, the difference is stated
-explicitly rather than glossed — see [§11 Prototype vs production](#11-prototype-vs-production).
+explicitly rather than glossed, see [§11 Prototype vs production](#11-prototype-vs-production).
 
 ---
 
@@ -13,7 +13,7 @@ explicitly rather than glossed — see [§11 Prototype vs production](#11-protot
 
 An executive asks *"Why are users in Texas underspending versus California?"* The system must
 turn that into correct SQL, execute it safely, interpret the result the way a human analyst
-would, and present it without leaking personal data — then let the executive argue with the
+would, and present it without leaking personal data, then let the executive argue with the
 answer, save it, and later delete it.
 
 Three properties make this harder than "text-to-SQL with a chat wrapper":
@@ -22,19 +22,19 @@ Three properties make this harder than "text-to-SQL with a chat wrapper":
    into several queries, and the follow-up ("why is that?") carries context.
 2. **The audience cannot sanity-check the number.** A technical user notices when revenue looks
    wrong by a factor of three. An executive acts on it. The dominant risk is therefore not a
-   failed query but a **confidently wrong answer**.
+   failed query but a confidently wrong answer.
 3. **The data is sensitive and the user is partially entitled.** Safety is not a filter applied
    at the end; it has to be a property of the query itself.
 
 ### The trap in this dataset
 
-There is **no revenue column.** Revenue must be derived from `order_items.sale_price`, and
+There is no revenue column. Revenue must be derived from `order_items.sale_price`, and
 *both* `orders.status` and `order_items.status` carry `Cancelled` and `Returned`. So "total
 revenue" has at least four plausible-looking definitions that differ by percent-level amounts,
 and a language model will silently pick one.
 
 This single observation drives the central design decision: the Golden Bucket is not decorative
-RAG, it is the **mechanism that pins metric definitions down**. See §6.
+RAG, it is the mechanism that pins metric definitions down. See §6.
 
 ---
 
@@ -71,7 +71,7 @@ flowchart TB
         IDP["Identity Platform<br/>Workspace SSO<br/>JWT: user_id + entitlements"]
     end
 
-    subgraph compute["Compute — Cloud Run"]
+    subgraph compute["Compute, Cloud Run"]
         API["FastAPI service<br/>request scoped, scales to zero"]
         AGENT["LangGraph agent runtime<br/>StateGraph + checkpointer"]
         JOBS["Cloud Run Jobs<br/>trio curation, scheduled reports,<br/>email delivery, eval suite"]
@@ -82,7 +82,7 @@ flowchart TB
         EMB["Vertex AI Embeddings<br/>gemini-embedding-001"]
     end
 
-    subgraph guard["Deterministic safety layer — no LLM"]
+    subgraph guard["Deterministic safety layer, no LLM"]
         SCOPE["Scoped view builder<br/>prepends entitled CTEs"]
         VALID["SQL whitelist validator<br/>sqlglot AST, fails closed"]
         MASK["PII registry + masker<br/>schema driven"]
@@ -141,7 +141,7 @@ flowchart TB
 ### Why this shape
 
 **Cloud Run, not GKE or Functions.** The workload is bursty, request-scoped, and idle most of
-the day — a handful of executives, not a consumer product. Cloud Run scales to zero (no idle
+the day, a handful of executives, not a consumer product. Cloud Run scales to zero (no idle
 cost), has no cluster to operate, and its 60-minute request ceiling comfortably covers a
 multi-step report. Cloud Functions would be too constrained for a long streaming response;
 GKE would mean operating a cluster for single-digit concurrent users.
@@ -150,13 +150,13 @@ GKE would mean operating a cluster for single-digit concurrent users.
 Vertex adds what production requires and AI Studio lacks: VPC Service Controls, data residency,
 contractual no-training-on-data, provisioned throughput instead of shared rate limits, and IAM
 rather than a bearer key. The prototype uses an AI Studio key because it is free and
-zero-setup — a deliberate, stated trade.
+zero-setup, a deliberate, stated trade.
 
 **Separate Cloud Run Jobs for async work.** Golden Bucket curation, scheduled digests, email
 delivery and the eval suite are long-running and must not share the request path. Triggering via
 Pub/Sub means the agent fires and forgets; a slow report cannot hold a user's turn open.
 
-**Cloud SQL Postgres as the one relational store.** It serves four needs — LangGraph
+**Cloud SQL Postgres as the one relational store.** It serves four needs, LangGraph
 checkpoints, the saved-reports library, the audit log, and (via `pgvector`) trio embeddings.
 One store with transactional integrity beats four specialised ones at this scale; the audit log
 in particular wants the same transaction as the delete it records.
@@ -178,7 +178,7 @@ Control flow is explicit, which is the whole reason for choosing LangGraph (§5)
 
 ```mermaid
 flowchart TD
-    START(["Turn begins"]) --> PRE["prefilter<br/><b>deterministic</b> — denylist, length,<br/>known injection patterns<br/><i>no LLM: refuse before paying</i>"]
+    START(["Turn begins"]) --> PRE["prefilter<br/><b>deterministic</b>, denylist, length,<br/>known injection patterns<br/><i>no LLM: refuse before paying</i>"]
     PRE -->|blocked| REFUSE["refuse<br/>log attempt + metric"]
     PRE -->|ok| TRIAGE["triage<br/><b>one</b> structured-output call:<br/>intent, in_scope, steps[],<br/>uses_prior_result"]
 
@@ -208,7 +208,7 @@ flowchart TD
     NEXT -->|yes| GEN
     NEXT -->|no| MASK
 
-    MASK["mask_pii<br/><b>before</b> synthesis — raw PII<br/>never enters model context"] --> SYN
+    MASK["mask_pii<br/><b>before</b> synthesis, raw PII<br/>never enters model context"] --> SYN
     SYN["synthesize_report<br/>structured Pydantic object<br/>persona + user prefs applied"] --> FAITH
 
     FAITH{"faithfulness check<br/>every numeral present<br/>in a result cell?"}
@@ -222,7 +222,7 @@ flowchart TD
     REFUSE --> OUT
     PREFS --> OUT(["Response + cost line + trace_id"])
 
-    subgraph destructive["Destructive branch — see §8"]
+    subgraph destructive["Destructive branch, see §8"]
         RESOLVE["resolve_candidates<br/>owner-filtered, explicit ID set<br/><b>persisted to state</b>"]
         RESOLVE --> PREVIEW["preview<br/>numbered table of exact matches"]
         PREVIEW --> INT{{"interrupt()<br/>durable pause"}}
@@ -235,14 +235,14 @@ flowchart TD
 
 A one-SQL-per-turn graph fails requirements the brief states verbatim:
 
-- **`schema_qa`** — *"Answer questions about the general structure of the database (what data is
+- `schema_qa`: *"Answer questions about the general structure of the database (what data is
   available, what can we do with it)"*. Answered from a cached schema card with no query at all.
   "What can we do with it" is answered by surfacing the Golden Bucket's question catalog, which
   turns requirement 1 into onboarding.
-- **`follow_up`** — *"discuss about it"*. "Why is that?" / "break that down by state" must read
+- `follow_up`: *"discuss about it"*. "Why is that?" / "break that down by state" must read
   the previous result frame from state rather than re-querying. This is also the cheapest path in
   the system: zero bytes billed, which serves requirement 5's cost clause.
-- **The multi-step loop** — *every* example question in the brief decomposes ("state X vs state
+- The multi-step loop: *every* example question in the brief decomposes ("state X vs state
   Y" is at minimum two aggregates plus a comparison; "Q1 report with Q2 action items" is several).
   Capped at three steps by the budget in state.
 
@@ -250,7 +250,7 @@ A one-SQL-per-turn graph fails requirements the brief states verbatim:
 
 Two LLM calls before any work begins is poor economics on a rate-limited tier, and ordering
 matters: the *deterministic* prefilter runs first, so an obvious injection costs nothing. Intent
-classification, scope checking and plan decomposition then share **one** structured-output call.
+classification, scope checking and plan decomposition then share one structured-output call.
 Fewer nodes, a clearer diagram, and roughly two fewer calls per turn once repair loops and
 multi-step plans multiply.
 
@@ -264,7 +264,7 @@ explicit rather than emergent.
 | Requirement | Control-flow need | Primitive |
 |---|---|---|
 | High-stakes oversight | durable pause mid-execution surviving process restart | `interrupt()` + checkpointer |
-| Resilience | a **bounded** cycle — a free-running loop inflates cost without limit | conditional edge + counter in state |
+| Resilience | a **bounded** cycle, a free-running loop inflates cost without limit | conditional edge + counter in state |
 | Observability | per-step attribution of latency, tokens, cost, failure | one event per node, from the topology |
 | Extensibility | add a capability without touching the core | new node/subgraph + edge |
 
@@ -278,8 +278,8 @@ but it abstracts the interrupt and retry semantics that this assignment is speci
 and learning it inside a time-box would trade control for novelty.
 
 **Experience level, stated plainly:** production LangGraph/LangChain experience, including
-checkpointed state and human-in-the-loop interrupts. The version-specific semantics that bite —
-node re-execution on resume, positional resume matching, `durability="sync"` — were verified
+checkpointed state and human-in-the-loop interrupts. The version-specific semantics that bite,
+node re-execution on resume, positional resume matching, `durability="sync"`, were verified
 against the installed source rather than assumed, and are documented in
 [`DECISIONS.md`](DECISIONS.md).
 
@@ -310,7 +310,7 @@ against the installed source rather than assumed, and are documented in
 ### The part that actually matters: the mined metric layer
 
 Retrieving similar questions improves phrasing. What prevents *wrong numbers* is the **metric
-registry mined from the trios** — the definitions human analysts actually used:
+registry mined from the trios**, the definitions human analysts actually used:
 
 ```yaml
 net_revenue:
@@ -339,7 +339,7 @@ flowchart LR
 ```
 
 Embeddings are precomputed at build time, so query-time cost is one embedding call for the
-question — not 30 for the corpus.
+question, not 30 for the corpus.
 
 **Right-sizing, stated for the record:** at ~40 trios, putting a compact catalog of trio
 *questions* in one prompt and letting the model select by ID would work about as well. Embeddings
@@ -388,7 +388,7 @@ flowchart TB
         G["LLM-generated SQL"]
         T["retrieved trio content"]
     end
-    subgraph D["TRUSTED — deterministic code"]
+    subgraph D["TRUSTED, deterministic code"]
         PF["prefilter"]
         SV["scoped view builder"]
         VA["sqlglot whitelist validator"]
@@ -409,11 +409,11 @@ flowchart TB
 ```
 
 **Everything a model produces is untrusted input to a deterministic gate.** That includes
-retrieved trio content — a poisoned trio must not be able to smuggle SQL past the validator.
+retrieved trio content, a poisoned trio must not be able to smuggle SQL past the validator.
 
-### Layer 1 — entitlement scoping (structural)
+### Layer 1: entitlement scoping (structural)
 
-The system **prepends** generated CTEs; it does not rewrite the model's SQL:
+The system prepends generated CTEs; it does not rewrite the model's SQL:
 
 ```sql
 WITH s_products AS (
@@ -434,14 +434,14 @@ s_users AS (
 
 **Why prepend rather than rewrite.** An earlier design filtered references to `products`. It had
 a bypass: `SELECT SUM(sale_price) FROM order_items` mentions no `products`, so no filter fires and
-the caller sees company-wide revenue — and since `order_items.sale_price` is the only revenue
+the caller sees company-wide revenue, and since `order_items.sale_price` is the only revenue
 column, that is the *common* question shape. Prepending plus whitelisting inverts the failure
-mode: anything the validator cannot fully account for is rejected (**P1**).
+mode: anything the validator cannot fully account for is rejected (P1).
 
-This also makes PII **structural** (**P2**): `email` is not forbidden, it is *absent*. And it
+This also makes PII structural (P2): `email` is not forbidden, it is *absent*. And it
 collapses two requirements into one mechanism, which is less code than the rewrite.
 
-### Layer 2 — the whitelist validator
+### Layer 2: the whitelist validator
 
 `sqlglot`, BigQuery dialect, deterministic, zero LLM cost. Rejects: more than one statement; any
 node that is not `SELECT`/`WITH`; any DML or DDL; `EXECUTE IMMEDIATE` and scripting;
@@ -449,19 +449,19 @@ node that is not `SELECT`/`WITH`; any DML or DDL; `EXECUTE IMMEDIATE` and script
 reference to `bigquery-public-data`; any CTE shadowing a scoped name; a missing `LIMIT`.
 **Unparseable SQL is rejected, never waved through.**
 
-### Layer 3 — masking before synthesis
+### Layer 3: masking before synthesis
 
 Two orderings matter more than the rules:
 
 1. **`mask_pii` precedes `synthesize_report`.** Raw PII never enters the model context. Masking
-   at print time silently exfiltrates PII to the LLM — the common mistake.
+   at print time silently exfiltrates PII to the LLM, the common mistake.
 2. **The question and generated SQL are scrubbed before logging**, or a `WHERE email = ...`
    predicate lands in the event log and traces.
 
-A narrow email/phone regex sits at egress as a **tripwire, not a filter**. It should never fire;
+A narrow email/phone regex sits at egress as a tripwire, not a filter. It should never fire;
 a firing is a defect in an upstream layer and pages accordingly (§9).
 
-### Layer 4 — identity disclosure, not inference
+### Layer 4: identity disclosure, not inference
 
 Requirement 2 forbids *displaying* PII. The brief *also* requires "top customers", which is
 inherently per-individual. A blanket k-anonymity floor would fail a named capability, so:
@@ -471,9 +471,9 @@ not globally. Reasoning in [`ASSUMPTIONS.md` A5](ASSUMPTIONS.md).
 
 ### Production hardening beyond the prototype
 
-Authorized views with the agent's service account holding **no base-table grant**; row-level
+Authorized views with the agent's service account holding no base-table grant; row-level
 access policies keyed on `SESSION_USER()`; column-level policy tags with dynamic masking.
-Note that RLS is *impossible* in the prototype by construction — it requires table ownership,
+Note that RLS is *impossible* in the prototype by construction, it requires table ownership,
 and `bigquery-public-data` is read-only to us. The scoped-CTE design is the faithful stand-in,
 which is why it was chosen to mirror the production shape.
 
@@ -496,7 +496,7 @@ sequenceDiagram
     Note over S: persisted BEFORE interrupting, so<br/>resume never re-resolves
     A-->>U: numbered preview of all 7<br/>+ "type DELETE 7 REPORTS to confirm"
 
-    Note over A,S: interrupt() — durable pause.<br/>Process may exit here.
+    Note over A,S: interrupt(), durable pause.<br/>Process may exit here.
 
     U->>A: (possibly after a restart) confirms
     A->>S: reload persisted set + validate token
@@ -510,12 +510,12 @@ sequenceDiagram
 ```
 
 **The decision a model must never make (P4).** Deletion executes against the *previewed,
-persisted* ID set, passed as data to deterministic code — never as a tool call the model can
+persisted* ID set, passed as data to deterministic code, never as a tool call the model can
 re-parameterise after confirmation. An owner predicate at the data-access layer is defence in
 depth. Without this, "delete the ones I said" is re-interpreted post-approval, which is the
 central failure mode of agentic destructive actions.
 
-**Friction scales with blast radius** — the "without breaking UX" clause. One or two reports: a
+**Friction scales with blast radius**, the "without breaking UX" clause. One or two reports: a
 natural "yes" is enough. Bulk or "all": a typed token. Uniform maximum friction trains users to
 confirm reflexively, which defeats the control.
 
@@ -530,25 +530,25 @@ content erasure.
 
 **One owned source of truth.** A structured JSONL event stream, one record per node execution,
 correlated by `trace_id`. It is greppable, ships in the repo as an artifact, powers `/trace`, and
-depends on nothing external — a *mandated* requirement must not rest on a third-party SaaS.
+depends on nothing external, a *mandated* requirement must not rest on a third-party SaaS.
 LangSmith/Langfuse is one optional env var for prompt-response correspondence; OTel to Cloud
 Trace is the production exporter.
 
 Every event: `trace_id`, `turn_id`, `node`, `status`, `latency_ms`, `model`, `tokens_in/out`,
 `cost_usd`, `bytes_billed`, `retry_count`, `error_class`, `persona_version`, `user_id`.
-Prompts are stored **post-scrub** (§7).
+Prompts are stored post-scrub (§7).
 
 ### Metrics, thresholds and actions
 
 | Family | Metric | Threshold | Action |
 |---|---|---|---|
-| **Safety** | PII tripwire firings | **any** | page immediately — an upstream layer leaked |
+| **Safety** | PII tripwire firings | **any** | page immediately, an upstream layer leaked |
 | | entitlement-violation attempts | spike vs. baseline | security review |
 | | injection detections | tracked | tune prefilter |
 | | validator rejection rate | > 15% | SQL prompt or scoped views need work |
 | **Quality** | SQL valid on first try | < 80% | review few-shot exemplars |
 | | repair success rate | < 50% | repair prompt ineffective |
-| | faithfulness-check failures | **any** | investigate — fabricated numbers |
+| | faithfulness-check failures | **any** | investigate, fabricated numbers |
 | | empty-result rate | > 10% | question-understanding gap |
 | | false-refusal rate | > 2% | prefilter too aggressive |
 | **Cost** | LLM calls per turn | p95 > 4 | plan/repair loops leaking |
@@ -575,7 +575,7 @@ eval-set construction are SQL queries rather than a bespoke tool.
 |---|---|---|---|
 | SQL syntax/semantic error | BigQuery error | repair node, max 2, must-change-hash | transparent unless exhausted |
 | Repair exhausted | attempt counter | stop, surface the SQL | explanation + `trace_id` + the SQL for a human |
-| **Empty result** | row count 0 | **diagnose**: probe date bounds, widen filters | *"No rows — this category has no orders after 2024-06"*, never a fabricated zero |
+| **Empty result** | row count 0 | **diagnose**: probe date bounds, widen filters | *"No rows, this category has no orders after 2024-06"*, never a fabricated zero |
 | Validator rejection | AST gate | one regeneration with the violation as feedback, then refuse | explanation of the constraint |
 | Gemini 429 | status + `retry-after` | honour `retry-after`, backoff with jitter, then fall back a model tier | *"using a faster model, quality may vary"* |
 | Gemini / BigQuery outage | circuit breaker opens | serve cached result if present | *"answered from cache, 38 minutes old"* (**P5**) |
@@ -588,7 +588,7 @@ eval-set construction are SQL queries rather than a bespoke tool.
 ≤3 LLM calls per turn by design; deterministic gates use no LLM at all; follow-ups answered from
 the prior result frame cost zero bytes; `dry_run` + `maximum_bytes_billed` before every execute;
 repair capped with a must-change-hash guard so a model cannot resubmit identical failing SQL;
-schema and results cached. The CLI **prints a cost line** each turn (bytes billed, tokens, cache
+schema and results cached. The CLI prints a cost line each turn (bytes billed, tokens, cache
 hit) so this is observable rather than merely claimed.
 
 **Demonstrable, not just implemented:** `--chaos bq_fail|llm_429|embed_fail` injects faults so
@@ -631,8 +631,8 @@ flowchart LR
 ```
 
 **The critical separation.** The editable layer is tone, verbosity, structure and vocabulary.
-The **safety contract** — PII rules, SQL constraints, entitlement enforcement, confirmation
-policy — is code-owned and unreachable from a persona file.
+The safety contract, PII rules, SQL constraints, entitlement enforcement, confirmation
+policy, is code-owned and unreachable from a persona file.
 
 This is the point most designs miss: *"non-developers can change the agent's instructions"* plus
 *"the guardrails are prompt-defined"* together mean **a non-developer can delete the
@@ -647,7 +647,7 @@ a specific edit and reverts in one click.
 
 **User level.** Explicit preferences (`/prefs set format=table`) plus implicit signals extracted
 from turns ("shorter please", "add a chart"). Implicit preferences require **N observations or
-explicit confirmation** before becoming sticky, carry a confidence, and decay — otherwise one
+explicit confirmation** before becoming sticky, carry a confidence, and decay, otherwise one
 offhand remark permanently distorts every future report. Always inspectable and editable by the
 user; stored per-user and injected into synthesis.
 
@@ -655,7 +655,7 @@ user; stored per-user and injected into synthesis.
 promotion (§6); eval-gated prompt champion/challenger; failure clustering into new regression
 cases; optionally a distilled small model for SQL generation.
 
-**No autonomous self-modification in production.** Every change — prompt, persona, trio, model —
+**No autonomous self-modification in production.** Every change, prompt, persona, trio, model,
 passes an offline eval gate and a human before reaching users. An agent that rewrites its own
 instructions from production traffic has no rollback story and no attribution when quality
 drifts. This is a deliberate position, not a missing feature.
@@ -664,15 +664,15 @@ drifts. This is a deliberate position, not a missing feature.
 
 ## 14. Quality assurance
 
-**Component level.** SQL **execution accuracy** — compare *result sets* against gold SQL, never
+**Component level.** SQL **execution accuracy**, compare *result sets* against gold SQL, never
 string equality, since many correct queries differ textually. A red-team suite where the required
 outcome is refusal (injection, PII extraction, entitlement bypass, off-topic). PII block rate on
 planted synthetic PII must be 100%, with false-positive rate tracked so the control is not
 merely blunt.
 
 **End-to-end.** A rubric LLM-judge (intent answered, grounded, actionable, correctly formatted,
-PII-free) **calibrated against ~50 human ratings** — an uncalibrated judge is not evidence, so
-judge-to-human agreement is itself reported. Plus the deterministic **faithfulness check**: every
+PII-free) calibrated against ~50 human ratings, an uncalibrated judge is not evidence, so
+judge-to-human agreement is itself reported. Plus the deterministic faithfulness check: every
 numeral in the report must appear in a result cell. That catches fabrication with no LLM and no
 cost.
 
@@ -689,7 +689,7 @@ champion/challenger on prompt and model changes.
 ## 15. Extensibility
 
 The brief asks for easy extension to charts, email and web search. Capabilities register with a
-declared **side-effect class**, which determines the control path:
+declared side-effect class, which determines the control path:
 
 | Class | Example | Path |
 |---|---|---|
@@ -700,8 +700,8 @@ declared **side-effect class**, which determines the control path:
 
 The design payoff: *"email this report to the board"* is a tool registration plus a policy flag.
 It needs no new confirmation machinery, because confirmation is a property of the side-effect
-class, not of deletion specifically. Extensibility is **demonstrated** — a minimal
-`export_report` capability ships through the registry — rather than merely asserted.
+class, not of deletion specifically. Extensibility is demonstrated, a minimal
+`export_report` capability ships through the registry, rather than merely asserted.
 
 ---
 
@@ -716,6 +716,6 @@ and none changes the architecture above.
 
 ## Related documents
 
-- [`SETUP.md`](SETUP.md) — credentials, install, verification, replay mode
-- [`DECISIONS.md`](DECISIONS.md) — decision log with rejected alternatives
-- [`ASSUMPTIONS.md`](ASSUMPTIONS.md) — every ambiguity resolved, with what would change
+- [`SETUP.md`](SETUP.md), credentials, install, verification, replay mode
+- [`DECISIONS.md`](DECISIONS.md), decision log with rejected alternatives
+- [`ASSUMPTIONS.md`](ASSUMPTIONS.md), every ambiguity resolved, with what would change

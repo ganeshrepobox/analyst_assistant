@@ -1,6 +1,6 @@
 """The BigQuery gateway: cost control, caching, replay and degradation.
 
-Exercised with a fake client, so these run with no credentials and no network --
+Exercised with a fake client, so these run with no credentials and no network,
 the same property that lets a reviewer run the prototype in replay mode.
 """
 
@@ -78,9 +78,7 @@ def _live(client, cache, **kwargs):
     return gateway
 
 
-# --------------------------------------------------------------------------
 # Fingerprinting and the cache
-# --------------------------------------------------------------------------
 
 
 def test_cosmetically_different_queries_share_a_fingerprint():
@@ -128,9 +126,7 @@ def test_expired_entries_can_still_be_read_for_stale_serving(tmp_path):
     assert cache.get(SQL, ignore_ttl=True) is not None
 
 
-# --------------------------------------------------------------------------
 # Replay mode
-# --------------------------------------------------------------------------
 
 
 class ExplodingClient:
@@ -192,9 +188,7 @@ def test_an_explicit_cache_is_honoured(cache):
     assert gateway.cache is cache
 
 
-# --------------------------------------------------------------------------
 # Cost control
-# --------------------------------------------------------------------------
 
 
 def test_every_query_is_dry_run_before_execution(cache):
@@ -230,9 +224,7 @@ def test_a_repeated_query_is_free_and_skips_the_warehouse(cache):
     assert client.calls == [], "a cache hit must not even dry-run"
 
 
-# --------------------------------------------------------------------------
 # Degradation
-# --------------------------------------------------------------------------
 
 
 def _open_breaker():
@@ -284,9 +276,7 @@ def test_empty_is_not_an_error(cache):
     assert result.is_empty and result.row_count == 0
 
 
-# --------------------------------------------------------------------------
 # Rate limiting
-# --------------------------------------------------------------------------
 
 
 def test_rate_limiter_does_not_delay_the_first_call():

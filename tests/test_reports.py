@@ -31,9 +31,7 @@ def _save(lib, owner, title, *, thread="t1", body=None, trace="tr1"):
     )
 
 
-# --------------------------------------------------------------------------
 # Basics
-# --------------------------------------------------------------------------
 
 
 def test_saved_report_can_be_read_back(lib):
@@ -54,9 +52,7 @@ def test_list_live_is_newest_first_and_excludes_deleted(lib):
     assert [r.id for r in live] == [second.id]
 
 
-# --------------------------------------------------------------------------
 # Ownership isolation
-# --------------------------------------------------------------------------
 
 
 def test_one_user_cannot_read_anothers_report(lib):
@@ -89,9 +85,7 @@ def test_delete_cannot_touch_another_users_report(lib):
     assert lib.get(victim.id, owner_id=BOB) is not None
 
 
-# --------------------------------------------------------------------------
 # Resolution: both shapes requirement 3 names
-# --------------------------------------------------------------------------
 
 
 def test_resolve_by_text_matches_title(lib):
@@ -136,9 +130,7 @@ def test_resolve_with_empty_id_list_matches_nothing(lib):
     assert lib.resolve(owner_id=ALICE, report_ids=[]) == []
 
 
-# --------------------------------------------------------------------------
 # Soft delete and undo
-# --------------------------------------------------------------------------
 
 
 def test_soft_delete_hides_but_retains(lib):
@@ -188,9 +180,7 @@ def test_empty_delete_list_is_a_no_op(lib):
     assert lib.soft_delete(owner_id=ALICE, report_ids=[]) == []
 
 
-# --------------------------------------------------------------------------
 # Audit
-# --------------------------------------------------------------------------
 
 
 def test_every_action_is_audited_with_actor_and_trace(lib):
@@ -219,9 +209,7 @@ def test_refused_delete_writes_no_audit_row(lib):
     assert actions == ["save"]
 
 
-# --------------------------------------------------------------------------
 # Preview rendering
-# --------------------------------------------------------------------------
 
 
 def test_summary_line_shows_title_and_date(lib):
