@@ -103,6 +103,10 @@ TABLES: dict[str, dict[str, PiiClass]] = {
         "country": PiiClass.ANALYTIC,
         "latitude": PiiClass.DIRECT_IDENTIFIER,
         "longitude": PiiClass.DIRECT_IDENTIFIER,
+        # A GEOGRAPHY point of the customer's location, so the same class as
+        # lat/long. Found by the doctor schema-drift check rather than by reading
+        # the docs, which is the reason that check exists.
+        "user_geom": PiiClass.DIRECT_IDENTIFIER,
         "traffic_source": PiiClass.ANALYTIC,
         "created_at": PiiClass.ANALYTIC,
     },

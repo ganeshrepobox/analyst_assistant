@@ -25,3 +25,6 @@ venv/
 # The assignment brief itself. Deliberately NOT published: the repo is public and
 # the client reuses this assignment. Requirements are restated in docs/ instead.
 AI Technical Assignment.md
+
+# Local runtime state
+checkpoints.sqlite

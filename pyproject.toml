@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Conversational data-analysis agent for retail executives over BigQuery"
 requires-python = ">=3.11"
 
+[project.scripts]
+analyst = "analyst_assistant.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

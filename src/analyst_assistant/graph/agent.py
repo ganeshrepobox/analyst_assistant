@@ -66,6 +66,49 @@ class SqlDraft(BaseModel):
     explanation: str = Field(description="One sentence on what it measures.")
 
 
+class ReportAction(StrEnum):
+    LIST = "list"
+    SAVE = "save"
+    DELETE = "delete"
+    UNDO = "undo"
+
+
+class ReportCommand(BaseModel):
+    """What the user wants done with their saved reports.
+
+    The model proposes a scope; it never names report ids. Resolving the scope to
+    ids, previewing them and deleting them is deterministic code.
+    """
+
+    action: ReportAction
+    match_text: str = Field(
+        default="",
+        description="For delete: the brand, category or phrase to match. Empty if none.",
+    )
+    this_conversation: bool = Field(
+        default=False,
+        description="True if they said 'this conversation', 'today', 'what we just did'.",
+    )
+
+
+def parse_report_command(
+    llm: Gemini, question: str, *, budget: Budget | None = None
+) -> ReportCommand:
+    """Work out which saved-report operation was asked for."""
+    prompt = f"""An executive said: {question!r}
+
+They are talking about their library of saved analysis reports. Decide which:
+- list: show their saved reports
+- save: keep the last answer as a report
+- delete: remove some reports
+- undo: restore what was just deleted
+
+For delete, set match_text to the brand, category or phrase they named, and set
+this_conversation to true only if they referred to this session rather than a topic.
+"""
+    return llm.structured(prompt, ReportCommand, job="triage", budget=budget)
+
+
 @dataclass
 class Deps:
     """Everything the graph needs from outside. Injected so tests can fake it."""
@@ -169,6 +212,17 @@ Question: {state["question"]!r}
                 "step_index": 0,
                 "results": [],
             }
+
+    def defer_to_reports(state: AgentState) -> AgentState:
+        """Stop here. Saved-report commands are handled outside the analysis graph.
+
+        They need the confirmation flow in destructive.py, which has its own
+        checkpointer. The point of the node is to end the turn after triage rather
+        than falling through to SQL generation.
+        """
+        with state["recorder"].span("defer_to_reports") as m:
+            m["attrs"] = {"reason": state.get("reason", "")}
+            return {"answer": ""}
 
     def refuse(state: AgentState) -> AgentState:
         with state["recorder"].span("refuse") as m:
@@ -377,6 +431,7 @@ the end.
     graph = StateGraph(AgentState)
     graph.add_node("triage", triage)
     graph.add_node("refuse", refuse)
+    graph.add_node("defer_to_reports", defer_to_reports)
     graph.add_node("schema_qa", schema_qa)
     graph.add_node("follow_up", follow_up)
     graph.add_node("generate_sql", generate_sql)
@@ -391,11 +446,13 @@ the end.
             Intent.SCHEMA: "schema_qa",
             Intent.FOLLOW_UP: "follow_up" if s.get("prior") else "generate_sql",
             Intent.REFUSE: "refuse",
+            Intent.REPORT_CRUD: "defer_to_reports",
         }.get(s.get("intent"), "generate_sql"),
         {
             "schema_qa": "schema_qa",
             "follow_up": "follow_up",
             "refuse": "refuse",
+            "defer_to_reports": "defer_to_reports",
             "generate_sql": "generate_sql",
         },
     )
@@ -410,7 +467,7 @@ the end.
         after_execute,
         {"generate_sql": "generate_sql", "synthesize": "synthesize"},
     )
-    for node in ("refuse", "schema_qa", "follow_up", "synthesize"):
+    for node in ("refuse", "defer_to_reports", "schema_qa", "follow_up", "synthesize"):
         graph.add_edge(node, END)
 
     # Raised rather than defaulted: the repair loop plus a 3-step plan can exceed 25,
