@@ -1,0 +1,42 @@
+# ---- Agent framework ----------------------------------------------------
+langgraph>=1.2.16
+langgraph-checkpoint-sqlite>=3.1.2   # NOT bundled with langgraph; required for
+                                     # durable interrupt()/resume across restarts
+langchain-core>=1.6.10               # floor set by langchain-google-genai 4.4.2
+
+# ---- LLM ----------------------------------------------------------------
+langchain-google-genai==4.4.2        # ChatGoogleGenerativeAI + GoogleGenerativeAIEmbeddings
+
+# ---- Data ---------------------------------------------------------------
+google-cloud-bigquery==3.46.2
+db-dtypes==1.8.0                     # REQUIRED: thelook has DATE/TIMESTAMP/NUMERIC columns
+                                     # and .to_dataframe() raises without this
+pyarrow>=23.0.0
+pandas>=2.3.3
+numpy>=2.4.1
+
+# ---- SQL safety ---------------------------------------------------------
+sqlglot==30.23.0                     # BigQuery-dialect AST parsing; the single enforcement
+                                     # point for the SQL whitelist. Fails CLOSED.
+
+# ---- CLI ----------------------------------------------------------------
+typer==0.21.1
+rich==14.3.1
+
+# ---- Config / resilience ------------------------------------------------
+pydantic>=2.12.5
+pydantic-settings>=2.12.0
+python-dotenv>=1.0.0
+PyYAML>=6.0
+tenacity==9.1.2                      # transient-only retry with jitter
+
+# ---- Dev / eval ---------------------------------------------------------
+pytest>=8.0.0
+ruff>=0.16.1
+mypy>=2.3.0
+
+# Deliberately NOT included, with reasons (see docs/DECISIONS.md):
+#   duckdb   - BigQuery-dialect divergence would mean two dialects + two validators
+#   spacy    - NER masking needs a model download; schema-driven masking dominates
+#   faiss    - a 30-50 document corpus does not justify a vector index
+#   opentelemetry-sdk - JSONL is the owned source of truth; OTel stays in the HLD

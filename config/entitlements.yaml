@@ -1,0 +1,30 @@
+# Who may analyze what.
+#
+# thelook_ecommerce has no concept of product ownership, so entitlements must be
+# imposed externally. In production this comes from an SSO token claim and is never
+# client-supplied; here it is config so that the restricted and unrestricted cases
+# can both be demonstrated. See docs/ASSUMPTIONS.md A2.
+#
+# categories: null  ->  unrestricted (still receives PII-stripped scoped views)
+
+users:
+  exec_women_apparel:
+    display_name: "Dana Levi (VP, Women's Apparel)"
+    persona: default
+    categories:
+      - "Women's Apparel"  # apostrophe is intentional: it exercises SQL literal escaping
+      - "Accessories"
+      - "Intimates"
+
+  exec_outerwear:
+    display_name: "Omer Katz (Director, Outerwear)"
+    persona: concise
+    categories:
+      - "Outerwear & Coats"
+      - "Fashion Hoodies & Sweatshirts"
+      - "Sweaters"
+
+  ceo:
+    display_name: "Maya Ben-David (CEO)"
+    persona: executive_brief
+    categories: null
