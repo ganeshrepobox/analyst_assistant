@@ -183,52 +183,51 @@ def test_subset_selection_deletes_only_the_chosen_rows(lib, checkpoint_path):
     assert len(lib.list_live(owner_id=ALICE)) == 1
 
 
-def test_bulk_delete_demands_the_typed_phrase(lib, checkpoint_path):
+def test_a_bare_yes_cannot_confirm_a_bulk_delete(lib, checkpoint_path):
+    """Friction scales with blast radius.
+
+    Uniform maximum friction is the lazy reading and it backfires: demanding a
+    typed phrase to delete one report trains people to type it unread.
+    """
     _seed(lib, ALICE, [f"Allbirds {i}" for i in range(6)])
     graph = _graph(lib, checkpoint_path)
-    cfg = _cfg("bulk")
+    cfg = _cfg("bulk-rejected")
 
     payload = _start(graph, request={"text": "allbirds"}, cfg=cfg)["__interrupt__"][0].value
     assert payload["requires_phrase"] is True
     assert payload["required_phrase"] == "DELETE 6 REPORTS"
 
-    # A bare "yes" is not enough; it is treated as unclear and re-prompted.
-    graph.invoke(Command(resume="yes"), cfg)
+    final = graph.invoke(Command(resume="yes"), cfg)
+    assert final["outcome"] == "unclear"
     assert len(lib.list_live(owner_id=ALICE)) == 6
 
+
+def test_the_typed_phrase_confirms_a_bulk_delete(lib, checkpoint_path):
+    _seed(lib, ALICE, [f"Allbirds {i}" for i in range(6)])
+    graph = _graph(lib, checkpoint_path)
+    cfg = _cfg("bulk-confirmed")
+
+    _start(graph, request={"text": "allbirds"}, cfg=cfg)
     final = graph.invoke(Command(resume="DELETE 6 REPORTS"), cfg)
+
     assert final["outcome"] == "deleted"
     assert lib.list_live(owner_id=ALICE) == []
 
 
-def test_unclear_reply_re_prompts_rather_than_aborting(lib, checkpoint_path):
-    """Re-prompting in place is the 'without breaking UX' half of the requirement."""
+def test_an_unclear_reply_deletes_nothing_and_says_so(lib, checkpoint_path):
+    """Ambiguity resolves toward less deletion.
+
+    Reported as unclear rather than as a cancellation, so the user knows to ask
+    again rather than assuming they declined.
+    """
     _seed(lib, ALICE, ["Allbirds Q1"])
     graph = _graph(lib, checkpoint_path)
     cfg = _cfg("unclear")
 
     _start(graph, request={"text": "allbirds"}, cfg=cfg)
-    again = graph.invoke(Command(resume="hmm maybe"), cfg)
+    final = graph.invoke(Command(resume="hmm maybe"), cfg)
 
-    assert "__interrupt__" in again, "should ask again instead of giving up"
-    assert len(lib.list_live(owner_id=ALICE)) == 1
-
-    final = graph.invoke(Command(resume="yes"), cfg)
-    assert final["outcome"] == "deleted"
-
-
-def test_persistent_ambiguity_eventually_gives_up_safely(lib, checkpoint_path):
-    """Bounded, so an uncooperative client cannot hold the turn open forever."""
-    _seed(lib, ALICE, ["Allbirds Q1"])
-    graph = _graph(lib, checkpoint_path)
-    cfg = _cfg("stubborn")
-
-    _start(graph, request={"text": "allbirds"}, cfg=cfg)
-    out = graph.invoke(Command(resume="hmm"), cfg)
-    while "__interrupt__" in out:
-        out = graph.invoke(Command(resume="hmm"), cfg)
-
-    assert out["outcome"] == "unclear"
+    assert final["outcome"] == "unclear"
     assert len(lib.list_live(owner_id=ALICE)) == 1
 
 

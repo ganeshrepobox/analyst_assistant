@@ -40,8 +40,7 @@ CREATE TABLE IF NOT EXISTS reports (
     title       TEXT NOT NULL,
     body        TEXT NOT NULL,
     created_at  TEXT NOT NULL,
-    deleted_at  TEXT,
-    delete_batch TEXT
+    deleted_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reports_owner ON reports(owner_id, deleted_at);
 CREATE INDEX IF NOT EXISTS idx_reports_thread ON reports(owner_id, thread_id);
@@ -196,7 +195,6 @@ class ReportLibrary:
         if not report_ids:
             return []
 
-        batch = uuid.uuid4().hex
         placeholders = ",".join("?" for _ in report_ids)
         cursor = self._conn.execute(
             f"SELECT id FROM reports WHERE owner_id = ? AND deleted_at IS NULL "
@@ -208,54 +206,46 @@ class ReportLibrary:
             self._conn.commit()
             return []
 
+        # All rows in one call share a timestamp, which is what /undo keys on.
         stamp = _now()
         marks = ",".join("?" for _ in deletable)
         self._conn.execute(
-            f"UPDATE reports SET deleted_at = ?, delete_batch = ? "
-            f"WHERE owner_id = ? AND id IN ({marks})",
-            (stamp, batch, owner_id, *deletable),
+            f"UPDATE reports SET deleted_at = ? WHERE owner_id = ? AND id IN ({marks})",
+            (stamp, owner_id, *deletable),
         )
         for report_id in deletable:
-            self._audit(
-                owner_id, "delete", report_id=report_id, trace_id=trace_id, detail=batch
-            )
+            self._audit(owner_id, "delete", report_id=report_id, trace_id=trace_id)
         self._conn.commit()
         return deletable
 
     def undo_last_delete(
         self, *, owner_id: str, trace_id: str | None = None
     ) -> list[str]:
-        """Restore the caller's most recent delete batch.
+        """Restore the caller's most recent deletion.
 
-        Batch-scoped rather than time-windowed, so ``/undo`` reverses exactly one
-        user action -- which is what a user means by "undo" -- instead of an
-        arbitrary set of rows that happen to share a timestamp.
+        Keyed on the newest ``deleted_at`` rather than a separate batch column:
+        every report deleted in one call shares that timestamp, so this reverses
+        exactly one user action, which is what a user means by "undo".
         """
         cursor = self._conn.execute(
-            "SELECT delete_batch FROM reports "
-            "WHERE owner_id = ? AND deleted_at IS NOT NULL AND delete_batch IS NOT NULL "
-            "ORDER BY deleted_at DESC LIMIT 1",
+            "SELECT MAX(deleted_at) AS last FROM reports "
+            "WHERE owner_id = ? AND deleted_at IS NOT NULL",
             (owner_id,),
         )
-        row = cursor.fetchone()
-        if row is None:
+        last = cursor.fetchone()["last"]
+        if last is None:
             return []
-        batch = row["delete_batch"]
 
         cursor = self._conn.execute(
-            "SELECT id FROM reports WHERE owner_id = ? AND delete_batch = ?",
-            (owner_id, batch),
+            "SELECT id FROM reports WHERE owner_id = ? AND deleted_at = ?", (owner_id, last)
         )
-        restored = [r["id"] for r in cursor.fetchall()]
+        restored = [row["id"] for row in cursor.fetchall()]
         self._conn.execute(
-            "UPDATE reports SET deleted_at = NULL, delete_batch = NULL "
-            "WHERE owner_id = ? AND delete_batch = ?",
-            (owner_id, batch),
+            "UPDATE reports SET deleted_at = NULL WHERE owner_id = ? AND deleted_at = ?",
+            (owner_id, last),
         )
         for report_id in restored:
-            self._audit(
-                owner_id, "undelete", report_id=report_id, trace_id=trace_id, detail=batch
-            )
+            self._audit(owner_id, "undelete", report_id=report_id, trace_id=trace_id)
         self._conn.commit()
         return restored
 
