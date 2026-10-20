@@ -21,3 +21,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+
+# The assignment brief itself. Deliberately NOT published: the repo is public and
+# the client reuses this assignment. Requirements are restated in docs/ instead.
+AI Technical Assignment.md
