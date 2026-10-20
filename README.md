@@ -26,8 +26,9 @@ Built with LangGraph on Gemini against BigQuery.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -e .                      # the package itself, src layout
 
-cp .env.example .env     # add your Gemini key + GCP project
+cp .env.example .env                  # add your Gemini key + GCP project
 python -m analyst_assistant doctor    # verify credentials and model access
 python -m analyst_assistant chat
 ```

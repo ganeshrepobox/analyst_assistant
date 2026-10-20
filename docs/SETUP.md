@@ -58,8 +58,12 @@ The key is a credential. `.gitignore` already excludes `*-service-account*.json`
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -e .
 python -m analyst_assistant doctor
 ```
+
+The `pip install -e .` is not optional. The package lives under `src/`, so without it
+`python -m analyst_assistant` fails with "No module named analyst_assistant".
 
 `doctor` checks credentials, lists the Gemini models this key can actually reach, and
 dry-runs one BigQuery query. Run it before anything else, credentials and model availability
