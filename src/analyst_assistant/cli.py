@@ -28,6 +28,7 @@ from rich.table import Table
 
 from .config.persona import ConfigStore, Persona
 from .data.bigquery import BigQueryGateway, CacheMode, ResultCache
+from .golden.bucket import GoldenBucket
 from .graph.agent import (
     Deps,
     ReportAction,
@@ -118,6 +119,7 @@ class Session:
     user: Entitlement
     persona: Persona
     thread_id: str
+    bucket: GoldenBucket | None = None
     graph: Any = None
     delete_graph: Any = None
     prior: list[ResultFrame] = field(default_factory=list)
@@ -169,6 +171,7 @@ def _make_session(user_id: str, mode: str, chaos_mode: str | None) -> Session:
         user=user,
         persona=store.persona(user.persona),
         thread_id=uuid.uuid4().hex[:12],
+        bucket=GoldenBucket("golden_bucket"),
     )
     session.rebuild()
     conn = sqlite3.connect(CHECKPOINT_PATH, check_same_thread=False)
@@ -208,6 +211,10 @@ def _show_debug(session: Session) -> None:
     for row in recorder.timeline():
         console.print(row)
     console.print(f"[dim]{recorder.cost_line()}[/]")
+    for event in recorder.events:
+        note = (event.attrs or {}).get("faithfulness")
+        if note:
+            console.print(f"[dim]figures: {note}[/]")
 
 
 def _show_trace(session: Session, trace_id: str) -> None:
@@ -394,6 +401,19 @@ def _handle_question(session: Session, question: str) -> None:
     session.last_recorder = recorder
     budget = Budget()
 
+    bucket = session.bucket
+    golden_context = ""
+    suggestions: list[str] = []
+    footnote = ""
+    if bucket is not None:
+        # Retrieval needs the question, so this is per turn rather than per session.
+        # The metric definitions are the part that must always be present.
+        golden_context = bucket.context(question, llm=session.llm)
+        suggestions = bucket.question_catalog()
+        hits = bucket.retrieve(question, llm=session.llm)
+        used = [m for trio in hits for m in trio.metrics] or ["net_revenue"]
+        footnote = bucket.registry.footnote(list(dict.fromkeys(used))) or ""
+
     with console.status("[dim]thinking...[/]", spinner="dots"):
         state = run_turn(
             session.graph,
@@ -404,6 +424,9 @@ def _handle_question(session: Session, question: str) -> None:
                 gateway=session.gateway,
                 persona_style=session.persona.style_instructions(),
                 global_note=session.store.global_note(),
+                golden_context=golden_context,
+                suggestions=suggestions,
+                metric_footnote=footnote + "." if footnote else "",
             ),
             recorder=recorder,
             budget=budget,
@@ -522,6 +545,26 @@ def chat(
             console.print(f"[red]That turn failed[/] ({type(exc).__name__}). Nothing changed.")
             console.print(f"[dim]trace {trace} - /debug for the timeline[/]")
         console.print()
+
+
+@app.command()
+def index() -> None:
+    """Embed the golden trios so retrieval can use cosine rather than word overlap."""
+    load_dotenv(Path(".env"))
+    bucket = GoldenBucket("golden_bucket")
+    console.print(
+        f"{len(bucket.trios)} trios, {len(bucket.registry.definitions)} metric definitions"
+    )
+    if not bucket.trios:
+        console.print("[red]No trios found in golden_bucket/trios.[/]")
+        raise typer.Exit(1)
+    try:
+        count = bucket.build_index(Gemini())
+    except Exception as exc:
+        console.print(f"[red]Could not build the index:[/] {type(exc).__name__}: {exc}")
+        console.print("[dim]Retrieval falls back to word overlap, so the agent still runs.[/]")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]Embedded {count} trios[/] into golden_bucket/index.npz")
 
 
 @app.command()

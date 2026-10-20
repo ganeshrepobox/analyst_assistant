@@ -1,0 +1,21 @@
+{
+  "id": "trio_005",
+  "question": "Compare the performance of our two biggest categories and explain the difference",
+  "sql": "SELECT\n  p.category,\n  ROUND(SUM(oi.sale_price), 2) AS net_revenue,\n  COUNT(DISTINCT oi.order_id) AS orders,\n  ROUND(SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.order_id)), 2) AS aov,\n  ROUND(AVG(p.retail_price), 2) AS avg_list_price\nFROM s_order_items AS oi\nJOIN s_orders   AS o ON o.order_id = oi.order_id\nJOIN s_products AS p ON p.id = oi.product_id\nWHERE o.status NOT IN ('Cancelled', 'Returned')\nGROUP BY p.category\nORDER BY net_revenue DESC\nLIMIT 10",
+  "report": "Revenue alongside average order value and list price, because two categories can reach the same revenue through very different routes: many cheap orders or few expensive ones. The pricing column is what separates the two explanations.",
+  "metadata": {
+    "metrics": [
+      "net_revenue",
+      "order_count",
+      "aov"
+    ],
+    "tags": [
+      "category",
+      "comparison",
+      "product"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

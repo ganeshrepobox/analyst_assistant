@@ -1,0 +1,20 @@
+{
+  "id": "trio_006",
+  "question": "What is our return rate and which categories are worst?",
+  "sql": "SELECT\n  p.category,\n  COUNT(DISTINCT o.order_id) AS orders,\n  ROUND(SAFE_DIVIDE(COUNTIF(o.status = 'Returned'), COUNT(*)), 4) AS return_rate\nFROM s_order_items AS oi\nJOIN s_orders   AS o ON o.order_id = oi.order_id\nJOIN s_products AS p ON p.id = oi.product_id\nGROUP BY p.category\nHAVING orders > 50\nORDER BY return_rate DESC\nLIMIT 20",
+  "report": "Return rate by category, with a volume floor so a category with a handful of orders cannot top the list on one return. Note the denominator here includes cancelled orders, so it is not on the same base as net revenue.",
+  "metadata": {
+    "metrics": [
+      "return_rate",
+      "order_count"
+    ],
+    "tags": [
+      "returns",
+      "quality",
+      "category"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

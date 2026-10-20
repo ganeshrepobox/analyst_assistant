@@ -1,0 +1,22 @@
+{
+  "sql": "WITH s_products AS (\n  SELECT\n    id,\n    cost,\n    category,\n    name,\n    brand,\n    retail_price,\n    department,\n    sku,\n    distribution_center_id\n  FROM `bigquery-public-data.thelook_ecommerce.products`\n), s_order_items AS (\n  SELECT\n    oi.id,\n    oi.order_id,\n    oi.user_id,\n    oi.product_id,\n    oi.inventory_item_id,\n    oi.status,\n    oi.created_at,\n    oi.shipped_at,\n    oi.delivered_at,\n    oi.returned_at,\n    oi.sale_price\n  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi\n  JOIN s_products AS sp\n    ON sp.id = oi.product_id\n), s_orders AS (\n  SELECT\n    o.order_id,\n    o.user_id,\n    o.status,\n    o.gender,\n    o.created_at,\n    o.returned_at,\n    o.shipped_at,\n    o.delivered_at\n  FROM `bigquery-public-data.thelook_ecommerce.orders` AS o\n  WHERE\n    o.order_id IN (\n      SELECT\n        order_id\n      FROM s_order_items\n    )\n), s_users AS (\n  SELECT\n    u.id,\n    u.age,\n    u.gender,\n    u.state,\n    u.city,\n    u.country,\n    u.traffic_source,\n    u.created_at\n  FROM `bigquery-public-data.thelook_ecommerce.users` AS u\n)\nSELECT\n  u.state,\n  COUNT(DISTINCT oi.user_id) AS customer_count,\n  ROUND(SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.user_id)), 2) AS spend_per_customer\nFROM s_order_items AS oi\nJOIN s_orders AS o\n  ON o.order_id = oi.order_id\nJOIN s_users AS u\n  ON u.id = oi.user_id\nWHERE\n  NOT o.status IN ('Cancelled', 'Returned') AND u.state IN ('Texas', 'California')\nGROUP BY\n  u.state\nLIMIT 10",
+  "columns": [
+    "state",
+    "customer_count",
+    "spend_per_customer"
+  ],
+  "rows": [
+    {
+      "state": "California",
+      "customer_count": 2504,
+      "spend_per_customer": 123.5
+    },
+    {
+      "state": "Texas",
+      "customer_count": 1575,
+      "spend_per_customer": 121.15
+    }
+  ],
+  "bytes_billed": 41943040,
+  "recorded_at": "2026-10-20T17:35:52.773695+00:00"
+}

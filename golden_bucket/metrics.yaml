@@ -1,0 +1,71 @@
+# Canonical metric definitions, taken from the past analyses in trios/.
+#
+# This file is the reason the Golden Bucket is not decorative. thelook_ecommerce
+# has no revenue column, so revenue has to be derived, and the obvious ways of
+# deriving it disagree:
+#
+#   including cancelled and returned orders : $10,814,271
+#   excluding them                          : $ 8,148,817
+#
+# A 32.7% difference from a choice nothing in the schema makes for you. Left to a
+# model, that choice is made freshly each time and never mentioned. Here it is made
+# once, and `plain` is quoted in the report so the reader can see it.
+#
+# Measured 2026-10-20 against the full dataset.
+
+metrics:
+  net_revenue:
+    sql: SUM(oi.sale_price)
+    filter: o.status NOT IN ('Cancelled', 'Returned')
+    plain: "Revenue excludes cancelled and returned orders"
+    note: >
+      The default. Both orders.status and order_items.status carry these values and
+      they are identical across all 181,978 rows, so either table works. Filtering
+      at all is what matters.
+
+  gross_revenue:
+    sql: SUM(oi.sale_price)
+    plain: "Revenue includes cancelled and returned orders"
+    note: >
+      Only when someone explicitly asks for gross or for demand. Overstates by
+      32.7% against net, so never use it as a default.
+
+  order_count:
+    sql: COUNT(DISTINCT oi.order_id)
+    filter: o.status NOT IN ('Cancelled', 'Returned')
+    plain: "Orders exclude cancelled and returned"
+    note: >
+      Count distinct order_id on order_items, not rows on orders, so it stays
+      correct once the query is scoped to a product category.
+
+  units_sold:
+    sql: COUNT(oi.id)
+    filter: o.status NOT IN ('Cancelled', 'Returned')
+    plain: "Units are individual items sold"
+
+  aov:
+    sql: SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.order_id))
+    filter: o.status NOT IN ('Cancelled', 'Returned')
+    plain: "Average order value is net revenue divided by orders"
+    note: Use SAFE_DIVIDE, since a filtered period can legitimately have no orders.
+
+  return_rate:
+    sql: SAFE_DIVIDE(COUNTIF(o.status = 'Returned'), COUNT(*))
+    plain: "Return rate is returned orders as a share of all orders"
+    note: >
+      Denominator is all orders including cancelled, so it is not comparable to
+      net_revenue's base. Say so when reporting both together.
+
+  customer_count:
+    sql: COUNT(DISTINCT oi.user_id)
+    filter: o.status NOT IN ('Cancelled', 'Returned')
+    plain: "Customers are distinct buyers"
+    note: Buyers, not registered users. Registered-but-never-purchased are excluded.
+
+  spend_per_customer:
+    sql: SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.user_id))
+    filter: o.status NOT IN ('Cancelled', 'Returned')
+    plain: "Spend per customer is net revenue divided by distinct buyers"
+    note: >
+      The right measure for "underspending" comparisons between regions. Comparing
+      raw revenue between states mostly measures population, not behaviour.

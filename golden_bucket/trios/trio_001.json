@@ -1,0 +1,19 @@
+{
+  "id": "trio_001",
+  "question": "What was our total revenue last quarter?",
+  "sql": "SELECT ROUND(SUM(oi.sale_price), 2) AS net_revenue\nFROM s_order_items AS oi\nJOIN s_orders AS o ON o.order_id = oi.order_id\nWHERE o.status NOT IN ('Cancelled', 'Returned')\n  AND oi.created_at >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 QUARTER), QUARTER)\n  AND oi.created_at <  DATE_TRUNC(CURRENT_DATE(), QUARTER)\nLIMIT 100",
+  "report": "Net revenue for the quarter. Stated as net because cancelled and returned orders are excluded; the gross figure runs about a third higher and is not what the board tracks.",
+  "metadata": {
+    "metrics": [
+      "net_revenue"
+    ],
+    "tags": [
+      "revenue",
+      "period",
+      "quarter"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "trio_002",
+  "question": "Why are customers in Texas underspending compared to California?",
+  "sql": "SELECT\n  u.state,\n  COUNT(DISTINCT oi.user_id) AS customers,\n  ROUND(SUM(oi.sale_price), 2) AS net_revenue,\n  ROUND(SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.user_id)), 2) AS spend_per_customer,\n  ROUND(SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.order_id)), 2) AS aov\nFROM s_order_items AS oi\nJOIN s_orders AS o ON o.order_id = oi.order_id\nJOIN s_users  AS u ON u.id = oi.user_id\nWHERE o.status NOT IN ('Cancelled', 'Returned')\n  AND u.state IN ('Texas', 'California')\nGROUP BY u.state\nLIMIT 100",
+  "report": "Compared per customer rather than in total, because California has far more buyers and a raw revenue gap would mostly measure that. The real question is whether each Texan customer spends less per order or simply orders less often, so both spend per customer and average order value are reported.",
+  "metadata": {
+    "metrics": [
+      "net_revenue",
+      "customer_count",
+      "spend_per_customer",
+      "aov"
+    ],
+    "tags": [
+      "comparison",
+      "state",
+      "underspending",
+      "region"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

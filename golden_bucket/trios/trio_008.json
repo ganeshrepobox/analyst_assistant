@@ -1,0 +1,22 @@
+{
+  "id": "trio_008",
+  "question": "How many customers bought more than once, and do they spend more?",
+  "sql": "WITH per_customer AS (\n  SELECT\n    oi.user_id,\n    COUNT(DISTINCT oi.order_id) AS orders,\n    SUM(oi.sale_price) AS spend\n  FROM s_order_items AS oi\n  JOIN s_orders AS o ON o.order_id = oi.order_id\n  WHERE o.status NOT IN ('Cancelled', 'Returned')\n  GROUP BY oi.user_id\n)\nSELECT\n  IF(orders > 1, 'repeat', 'one-off') AS segment,\n  COUNT(*) AS customers,\n  ROUND(AVG(spend), 2) AS avg_spend,\n  ROUND(SUM(spend), 2) AS total_spend\nFROM per_customer\nGROUP BY segment\nLIMIT 10",
+  "report": "Buyers split into repeat and one-off with average and total spend for each. Aggregating per customer first is what makes the averages mean anything; done in one pass the order rows would dominate.",
+  "metadata": {
+    "metrics": [
+      "net_revenue",
+      "customer_count",
+      "order_count"
+    ],
+    "tags": [
+      "retention",
+      "repeat",
+      "segment",
+      "customers"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

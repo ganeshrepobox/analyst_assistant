@@ -21,7 +21,7 @@ rather than dicts that have to round-trip through JSON.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypedDict
 
@@ -34,7 +34,7 @@ from ..llm import Gemini, LLMBudgetExceeded
 from ..obs.events import Recorder
 from ..resilience.breaker import CircuitOpenError, describe_failure
 from ..resilience.budget import Budget, RepairVerdict
-from ..safety import masking
+from ..safety import faithfulness, masking
 from ..safety.entitlements import Entitlement, compose
 from ..safety.schema import schema_card
 from ..safety.sql_guard import validate
@@ -118,6 +118,13 @@ class Deps:
     persona_style: str = ""
     global_note: str = ""
     golden_context: str = ""
+    suggestions: list[str] = field(default_factory=list)
+    metric_footnote: str = ""
+    """Verbatim definition line for the report.
+
+    Passed through rather than described, because asking the model to state the
+    definition produced "after returns and discounts" when the actual rule is
+    "excludes cancelled and returned orders". Discounts were invented."""
 
 
 class ResultFrame(TypedDict):
@@ -148,6 +155,7 @@ class AgentState(TypedDict, total=False):
     feedback: str
     answer: str
     degraded: str
+    faithfulness: str
 
 
 def _rows_for_prompt(df: pd.DataFrame) -> str:
@@ -247,8 +255,11 @@ may see, and personal columns are not present at all.
 
 {schema_card()}
 
-Explain in plain language what data is available and give three example questions
-they could ask. Do not mention SQL, table names or column names.
+Explain in plain language what data is available, then suggest three questions they
+could ask. Do not mention SQL, table names or column names.
+
+Questions analysts have already answered from this data, if useful as suggestions:
+{chr(10).join("- " + s for s in state["deps"].suggestions) or "(none recorded)"}
 
 {state["deps"].persona_style}
 """
@@ -399,6 +410,9 @@ Question: {sub_question!r}
                     )
                 }
 
+            footnote = state["deps"].metric_footnote or (
+                "Revenue excludes cancelled and returned orders."
+            )
             empty = all(not frame["rows"] for frame in results)
             if empty:
                 return {
@@ -414,19 +428,29 @@ Question: {sub_question!r}
 Figures returned:
 {_frames_for_prompt(results)}
 
-Write the answer. Use only these figures and do not invent any number. Customer
-identifiers are already pseudonymised, so refer to them as shown. Do not mention
-SQL, tables or columns. State the revenue definition you used in one short line at
-the end.
+Write the answer. Use only these figures. Never write a number that is not in the
+table above, including inside sentences. Customer identifiers are already
+pseudonymised, so refer to them as shown. Do not mention SQL, tables or columns.
 
 {state["deps"].persona_style}
 {state["deps"].global_note}
 {f"Note to include: {degraded}" if degraded else ""}
+
+End with this line exactly as written, unchanged:
+{footnote}
 """
             answer = state["deps"].llm.text(
                 prompt, job="synthesis", budget=state["budget"], span=m
             )
-            return {"answer": answer}
+
+            check = faithfulness.check(answer, results)
+            m["attrs"] = {"faithfulness": check.summary()}
+            if not check.ok:
+                state["recorder"].metrics.incr(
+                    "quality.unverified_figures", len(check.unverified)
+                )
+                m["status"] = "degraded"
+            return {"answer": answer, "faithfulness": check.summary()}
 
     graph = StateGraph(AgentState)
     graph.add_node("triage", triage)

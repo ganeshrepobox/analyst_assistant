@@ -1,0 +1,20 @@
+{
+  "id": "trio_004",
+  "question": "How did revenue trend by month this year?",
+  "sql": "SELECT\n  DATE_TRUNC(DATE(oi.created_at), MONTH) AS month,\n  ROUND(SUM(oi.sale_price), 2) AS net_revenue,\n  COUNT(DISTINCT oi.order_id) AS orders\nFROM s_order_items AS oi\nJOIN s_orders AS o ON o.order_id = oi.order_id\nWHERE o.status NOT IN ('Cancelled', 'Returned')\n  AND oi.created_at >= DATE_TRUNC(CURRENT_DATE(), YEAR)\nGROUP BY month\nORDER BY month\nLIMIT 100",
+  "report": "Monthly net revenue with order counts alongside, since revenue moving without orders moving is a basket-size story and the two need different responses.",
+  "metadata": {
+    "metrics": [
+      "net_revenue",
+      "order_count"
+    ],
+    "tags": [
+      "trend",
+      "monthly",
+      "time"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

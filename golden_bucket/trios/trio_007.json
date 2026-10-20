@@ -1,0 +1,20 @@
+{
+  "id": "trio_007",
+  "question": "Which brands are growing fastest year on year?",
+  "sql": "SELECT\n  p.brand,\n  ROUND(SUM(IF(EXTRACT(YEAR FROM oi.created_at) = EXTRACT(YEAR FROM CURRENT_DATE()),\n               oi.sale_price, 0)), 2) AS revenue_this_year,\n  ROUND(SUM(IF(EXTRACT(YEAR FROM oi.created_at) = EXTRACT(YEAR FROM CURRENT_DATE()) - 1,\n               oi.sale_price, 0)), 2) AS revenue_last_year\nFROM s_order_items AS oi\nJOIN s_orders   AS o ON o.order_id = oi.order_id\nJOIN s_products AS p ON p.id = oi.product_id\nWHERE o.status NOT IN ('Cancelled', 'Returned')\n  AND p.brand IS NOT NULL\nGROUP BY p.brand\nHAVING revenue_last_year > 1000\nORDER BY SAFE_DIVIDE(revenue_this_year, revenue_last_year) DESC\nLIMIT 20",
+  "report": "Growth as a ratio with both years shown, and a floor on the prior year so a brand going from $5 to $50 does not read as 900% growth. Conditional sums in one pass rather than a self-join.",
+  "metadata": {
+    "metrics": [
+      "net_revenue"
+    ],
+    "tags": [
+      "brand",
+      "growth",
+      "yoy",
+      "trend"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

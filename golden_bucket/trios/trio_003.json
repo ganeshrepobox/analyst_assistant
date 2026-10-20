@@ -1,0 +1,21 @@
+{
+  "id": "trio_003",
+  "question": "Who are our top 10 customers by spend?",
+  "sql": "SELECT\n  oi.user_id,\n  u.state,\n  COUNT(DISTINCT oi.order_id) AS orders,\n  ROUND(SUM(oi.sale_price), 2) AS net_revenue\nFROM s_order_items AS oi\nJOIN s_orders AS o ON o.order_id = oi.order_id\nJOIN s_users  AS u ON u.id = oi.user_id\nWHERE o.status NOT IN ('Cancelled', 'Returned')\nGROUP BY oi.user_id, u.state\nORDER BY net_revenue DESC\nLIMIT 10",
+  "report": "Ranked buyers with their order counts, so a single large purchase can be told apart from a genuinely loyal customer. Identifiers come through pseudonymised, which is enough to act on a segment without naming anyone.",
+  "metadata": {
+    "metrics": [
+      "net_revenue",
+      "order_count"
+    ],
+    "tags": [
+      "customers",
+      "top",
+      "spend",
+      "ranking"
+    ],
+    "author": "analytics@retail.example",
+    "approved_at": "2026-09-30",
+    "quality_score": 0.9
+  }
+}

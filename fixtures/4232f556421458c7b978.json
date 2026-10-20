@@ -1,0 +1,378 @@
+{
+  "sql": "WITH s_products AS (\n  SELECT\n    id,\n    cost,\n    category,\n    name,\n    brand,\n    retail_price,\n    department,\n    sku,\n    distribution_center_id\n  FROM `bigquery-public-data.thelook_ecommerce.products`\n), s_order_items AS (\n  SELECT\n    oi.id,\n    oi.order_id,\n    oi.user_id,\n    oi.product_id,\n    oi.inventory_item_id,\n    oi.status,\n    oi.created_at,\n    oi.shipped_at,\n    oi.delivered_at,\n    oi.returned_at,\n    oi.sale_price\n  FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi\n  JOIN s_products AS sp\n    ON sp.id = oi.product_id\n), s_orders AS (\n  SELECT\n    o.order_id,\n    o.user_id,\n    o.status,\n    o.gender,\n    o.created_at,\n    o.returned_at,\n    o.shipped_at,\n    o.delivered_at\n  FROM `bigquery-public-data.thelook_ecommerce.orders` AS o\n  WHERE\n    o.order_id IN (\n      SELECT\n        order_id\n      FROM s_order_items\n    )\n), s_users AS (\n  SELECT\n    u.id,\n    u.age,\n    u.gender,\n    u.state,\n    u.city,\n    u.country,\n    u.traffic_source,\n    u.created_at\n  FROM `bigquery-public-data.thelook_ecommerce.users` AS u\n)\nSELECT\n  u.state,\n  p.category,\n  COUNT(DISTINCT oi.order_id) AS orders,\n  COUNT(oi.id) AS units_sold,\n  ROUND(SUM(oi.sale_price), 2) AS net_revenue\nFROM s_order_items AS oi\nJOIN s_orders AS o\n  ON o.order_id = oi.order_id\nJOIN s_users AS u\n  ON u.id = oi.user_id\nJOIN s_products AS p\n  ON p.id = oi.product_id\nWHERE\n  NOT o.status IN ('Cancelled', 'Returned') AND u.state IN ('Texas', 'California')\nGROUP BY\n  u.state,\n  p.category\nORDER BY\n  u.state,\n  net_revenue DESC\nLIMIT 100",
+  "columns": [
+    "state",
+    "category",
+    "orders",
+    "units_sold",
+    "net_revenue"
+  ],
+  "rows": [
+    {
+      "state": "California",
+      "category": "Outerwear & Coats",
+      "orders": 269,
+      "units_sold": 277,
+      "net_revenue": 36805.46
+    },
+    {
+      "state": "California",
+      "category": "Jeans",
+      "orders": 350,
+      "units_sold": 368,
+      "net_revenue": 36113.82
+    },
+    {
+      "state": "California",
+      "category": "Sweaters",
+      "orders": 284,
+      "units_sold": 292,
+      "net_revenue": 22080.51
+    },
+    {
+      "state": "California",
+      "category": "Fashion Hoodies & Sweatshirts",
+      "orders": 317,
+      "units_sold": 328,
+      "net_revenue": 18175.87
+    },
+    {
+      "state": "California",
+      "category": "Sleep & Lounge",
+      "orders": 338,
+      "units_sold": 347,
+      "net_revenue": 17936.78
+    },
+    {
+      "state": "California",
+      "category": "Swim",
+      "orders": 304,
+      "units_sold": 311,
+      "net_revenue": 17466.37
+    },
+    {
+      "state": "California",
+      "category": "Suits & Sport Coats",
+      "orders": 134,
+      "units_sold": 138,
+      "net_revenue": 16910.3
+    },
+    {
+      "state": "California",
+      "category": "Shorts",
+      "orders": 323,
+      "units_sold": 329,
+      "net_revenue": 14846.39
+    },
+    {
+      "state": "California",
+      "category": "Tops & Tees",
+      "orders": 320,
+      "units_sold": 331,
+      "net_revenue": 14005.12
+    },
+    {
+      "state": "California",
+      "category": "Dresses",
+      "orders": 144,
+      "units_sold": 149,
+      "net_revenue": 13691.98
+    },
+    {
+      "state": "California",
+      "category": "Pants",
+      "orders": 221,
+      "units_sold": 227,
+      "net_revenue": 13449.43
+    },
+    {
+      "state": "California",
+      "category": "Accessories",
+      "orders": 266,
+      "units_sold": 275,
+      "net_revenue": 12989.43
+    },
+    {
+      "state": "California",
+      "category": "Active",
+      "orders": 240,
+      "units_sold": 246,
+      "net_revenue": 12289.05
+    },
+    {
+      "state": "California",
+      "category": "Intimates",
+      "orders": 317,
+      "units_sold": 338,
+      "net_revenue": 11562.78
+    },
+    {
+      "state": "California",
+      "category": "Blazers & Jackets",
+      "orders": 90,
+      "units_sold": 91,
+      "net_revenue": 9649.43
+    },
+    {
+      "state": "California",
+      "category": "Maternity",
+      "orders": 162,
+      "units_sold": 164,
+      "net_revenue": 7893.56
+    },
+    {
+      "state": "California",
+      "category": "Underwear",
+      "orders": 220,
+      "units_sold": 232,
+      "net_revenue": 6422.47
+    },
+    {
+      "state": "California",
+      "category": "Plus",
+      "orders": 140,
+      "units_sold": 144,
+      "net_revenue": 6260.25
+    },
+    {
+      "state": "California",
+      "category": "Suits",
+      "orders": 34,
+      "units_sold": 34,
+      "net_revenue": 4525.68
+    },
+    {
+      "state": "California",
+      "category": "Skirts",
+      "orders": 60,
+      "units_sold": 61,
+      "net_revenue": 4267.34
+    },
+    {
+      "state": "California",
+      "category": "Pants & Capris",
+      "orders": 77,
+      "units_sold": 78,
+      "net_revenue": 3714.12
+    },
+    {
+      "state": "California",
+      "category": "Socks",
+      "orders": 153,
+      "units_sold": 160,
+      "net_revenue": 2922.8
+    },
+    {
+      "state": "California",
+      "category": "Leggings",
+      "orders": 84,
+      "units_sold": 84,
+      "net_revenue": 2436.76
+    },
+    {
+      "state": "California",
+      "category": "Socks & Hosiery",
+      "orders": 98,
+      "units_sold": 98,
+      "net_revenue": 1592.48
+    },
+    {
+      "state": "California",
+      "category": "Clothing Sets",
+      "orders": 7,
+      "units_sold": 7,
+      "net_revenue": 658.8
+    },
+    {
+      "state": "California",
+      "category": "Jumpsuits & Rompers",
+      "orders": 17,
+      "units_sold": 17,
+      "net_revenue": 583.93
+    },
+    {
+      "state": "Texas",
+      "category": "Outerwear & Coats",
+      "orders": 182,
+      "units_sold": 186,
+      "net_revenue": 26589.39
+    },
+    {
+      "state": "Texas",
+      "category": "Jeans",
+      "orders": 221,
+      "units_sold": 231,
+      "net_revenue": 21729.41
+    },
+    {
+      "state": "Texas",
+      "category": "Sweaters",
+      "orders": 218,
+      "units_sold": 221,
+      "net_revenue": 16517.05
+    },
+    {
+      "state": "Texas",
+      "category": "Swim",
+      "orders": 203,
+      "units_sold": 211,
+      "net_revenue": 12014.77
+    },
+    {
+      "state": "Texas",
+      "category": "Suits & Sport Coats",
+      "orders": 90,
+      "units_sold": 90,
+      "net_revenue": 11336.21
+    },
+    {
+      "state": "Texas",
+      "category": "Sleep & Lounge",
+      "orders": 206,
+      "units_sold": 211,
+      "net_revenue": 10580.98
+    },
+    {
+      "state": "Texas",
+      "category": "Fashion Hoodies & Sweatshirts",
+      "orders": 181,
+      "units_sold": 190,
+      "net_revenue": 10200.02
+    },
+    {
+      "state": "Texas",
+      "category": "Shorts",
+      "orders": 189,
+      "units_sold": 195,
+      "net_revenue": 9469.97
+    },
+    {
+      "state": "Texas",
+      "category": "Accessories",
+      "orders": 164,
+      "units_sold": 166,
+      "net_revenue": 8702.46
+    },
+    {
+      "state": "Texas",
+      "category": "Tops & Tees",
+      "orders": 205,
+      "units_sold": 211,
+      "net_revenue": 8478.47
+    },
+    {
+      "state": "Texas",
+      "category": "Intimates",
+      "orders": 208,
+      "units_sold": 218,
+      "net_revenue": 7598.99
+    },
+    {
+      "state": "Texas",
+      "category": "Pants",
+      "orders": 113,
+      "units_sold": 119,
+      "net_revenue": 7129.01
+    },
+    {
+      "state": "Texas",
+      "category": "Dresses",
+      "orders": 80,
+      "units_sold": 80,
+      "net_revenue": 6719.61
+    },
+    {
+      "state": "Texas",
+      "category": "Active",
+      "orders": 137,
+      "units_sold": 138,
+      "net_revenue": 5921.03
+    },
+    {
+      "state": "Texas",
+      "category": "Blazers & Jackets",
+      "orders": 54,
+      "units_sold": 56,
+      "net_revenue": 5273.82
+    },
+    {
+      "state": "Texas",
+      "category": "Maternity",
+      "orders": 85,
+      "units_sold": 89,
+      "net_revenue": 4126.05
+    },
+    {
+      "state": "Texas",
+      "category": "Pants & Capris",
+      "orders": 57,
+      "units_sold": 57,
+      "net_revenue": 3957.74
+    },
+    {
+      "state": "Texas",
+      "category": "Underwear",
+      "orders": 110,
+      "units_sold": 116,
+      "net_revenue": 3097.41
+    },
+    {
+      "state": "Texas",
+      "category": "Socks",
+      "orders": 108,
+      "units_sold": 109,
+      "net_revenue": 2884.77
+    },
+    {
+      "state": "Texas",
+      "category": "Plus",
+      "orders": 73,
+      "units_sold": 74,
+      "net_revenue": 2098.64
+    },
+    {
+      "state": "Texas",
+      "category": "Suits",
+      "orders": 17,
+      "units_sold": 17,
+      "net_revenue": 1926.47
+    },
+    {
+      "state": "Texas",
+      "category": "Skirts",
+      "orders": 33,
+      "units_sold": 33,
+      "net_revenue": 1249.45
+    },
+    {
+      "state": "Texas",
+      "category": "Socks & Hosiery",
+      "orders": 73,
+      "units_sold": 73,
+      "net_revenue": 1208.12
+    },
+    {
+      "state": "Texas",
+      "category": "Jumpsuits & Rompers",
+      "orders": 20,
+      "units_sold": 20,
+      "net_revenue": 1001.04
+    },
+    {
+      "state": "Texas",
+      "category": "Leggings",
+      "orders": 42,
+      "units_sold": 43,
+      "net_revenue": 880.39
+    },
+    {
+      "state": "Texas",
+      "category": "Clothing Sets",
+      "orders": 2,
+      "units_sold": 2,
+      "net_revenue": 120.98
+    }
+  ],
+  "bytes_billed": 41943040,
+  "recorded_at": "2026-10-20T17:36:15.934430+00:00"
+}
