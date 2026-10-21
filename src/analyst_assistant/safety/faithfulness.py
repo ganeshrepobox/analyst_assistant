@@ -123,3 +123,20 @@ def check(answer: str, frames: Sequence[Mapping[str, Any]]) -> FaithfulnessRepor
         ):
             report.unverified.append(token)
     return report
+
+
+def figures_in(text: str) -> list[str]:
+    """Significant figures mentioned in some text, ignoring years.
+
+    For answers written without querying anything, where any figure is invented by
+    definition and there are no results to compare against.
+    """
+    found: list[str] = []
+    for token in _NUMBER.findall(text or ""):
+        value = _parse(token)
+        if value is None or abs(value) < MIN_INTERESTING:
+            continue
+        if _is_year(token, value) or token in found:
+            continue
+        found.append(token)
+    return found

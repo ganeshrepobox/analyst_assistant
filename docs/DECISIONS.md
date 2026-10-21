@@ -206,6 +206,11 @@ Triage and SQL now run at temperature 0, synthesis stays warmer for prose. Stabl
 SQL also means a recorded fixture is reusable, which is what makes replay mode
 worth having.
 
+Verified on 2026-10-21: the same question twice produced byte-identical SQL, with
+the status filter applied both times. An earlier attempt at this check was itself
+broken, fingerprinting an empty string when a run failed and reporting that as a
+mismatch, so the first result was meaningless rather than negative.
+
 ## D13. A faithfulness check on the written answer
 
 A live run tabulated 2504 customers correctly and wrote "2,5004 customers" in the
@@ -250,3 +255,27 @@ guarantee it.
 
 For a reviewer who wants to see a full session without running anything, the
 transcript in the README is the honest artifact.
+
+## D16. A route with no data must not state figures
+
+schema_qa answers from the schema card without querying anything. Asked "what data
+do we have available", it replied that we have "4,500 customers, 12,000 orders and
+2,500 products". All three were invented: the schema card carries no counts, and
+the real figures are roughly 100,000 users and 125,000 orders.
+
+The faithfulness check could not catch it. That compares figures against query
+results, and this route has none, so there was nothing to compare against and the
+check passed.
+
+Two changes. The prompt now says explicitly that nothing has been queried, forbids
+stating any figure, and tells the model to offer to find out instead. And
+`figures_in()` flags any significant number appearing in an answer written without
+data, which is a different test from the faithfulness one: here any figure at all is
+wrong by definition.
+
+It also stopped generating action items on this route, which the persona had been
+asking for. There are no findings to act on before a question has been asked.
+
+Worth noting as a class: a safety check scoped to one path leaves the paths it does
+not cover looking safe. The absence of results made the check vacuous rather than
+failing.

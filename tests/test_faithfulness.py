@@ -89,3 +89,24 @@ def test_string_numbers_in_results_still_count():
     """BigQuery NUMERIC columns can arrive as strings."""
     frames = [{"rows": [{"revenue": "1284900.37"}]}]
     assert faithfulness.check("Revenue was $1,284,900.37.", frames).ok
+
+
+# Answers written without querying anything
+
+
+def test_figures_in_finds_invented_counts():
+    """A live schema answer claimed 4,500 customers when nothing had been queried."""
+    text = "We have 4,500 customers, 12,000 orders, and 2,500 products."
+    assert faithfulness.figures_in(text) == ["4,500", "12,000", "2,500"]
+
+
+def test_figures_in_ignores_years_and_small_numbers():
+    assert faithfulness.figures_in("In 2024 we saw 3 categories grow.") == []
+
+
+def test_figures_in_on_a_clean_schema_answer():
+    text = (
+        "You can ask about customers, orders and products, including where customers "
+        "are based and how long delivery took. I can find the totals when you ask."
+    )
+    assert faithfulness.figures_in(text) == []

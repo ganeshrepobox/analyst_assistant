@@ -137,6 +137,39 @@ roughly 40% and told the CEO that Texas underspends, when mostly it has fewer
 customers. That choice comes from the metric registry and a past analysis in the
 Golden Bucket, not from the model.
 
+### Asking what data exists, with no query at all
+
+```
+you > What data do we have available?
+
+*   Orders: records of all customer orders, including status (shipped, delivered,
+    returned), key fulfillment dates, and overall purchasing activity.
+*   Order Items: individual items within those orders, with pricing and product
+    details.
+*   Products: catalog with costs, retail prices, categories, brands, departments.
+*   Customers: demographic and geographic details, age groups, cities, states,
+    countries, and how they found us, while keeping all personal identifying
+    information strictly private.
+
+If you would like to know the current scale of our customer base, order volume, or
+product catalog, just ask and I can find those numbers for you.
+
+1. What was our total revenue last quarter, and how does that trend month by month?
+2. What is our overall return rate, and which categories struggle most with returns?
+3. Which brands are currently growing the fastest year on year?
+
+2 LLM calls · 0.0 MB billed · trace f9a4cbe8a05b
+```
+
+Zero bytes billed: this route never touches the warehouse. The three suggestions
+come from the Golden Bucket's question catalogue, so they are questions the system
+is actually known to answer well.
+
+Note what it does not do. An earlier version of this answer confidently stated
+"4,500 customers, 12,000 orders and 2,500 products", all three invented, since the
+schema card carries no counts. The route now refuses to state figures and offers to
+look them up. See `docs/DECISIONS.md` D16.
+
 ### Refusals
 
 ```

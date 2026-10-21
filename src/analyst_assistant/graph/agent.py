@@ -258,14 +258,26 @@ may see, and personal columns are not present at all.
 Explain in plain language what data is available, then suggest three questions they
 could ask. Do not mention SQL, table names or column names.
 
+You have NOT queried anything, so you do not know how many customers, orders or
+products there are. Do not state any figure, count, total or percentage. If you
+want to convey scale, say you can find out when asked. Do not include action items
+here either: there are no findings to act on yet.
+
 Questions analysts have already answered from this data, if useful as suggestions:
 {chr(10).join("- " + s for s in state["deps"].suggestions) or "(none recorded)"}
-
-{state["deps"].persona_style}
 """
             answer = state["deps"].llm.text(
                 prompt, job="synthesis", budget=state["budget"], span=m
             )
+
+            # No query ran, so any figure here was invented. A live run claimed
+            # "4,500 customers, 12,000 orders and 2,500 products" when the schema
+            # card carries no counts at all.
+            invented = faithfulness.figures_in(answer)
+            if invented:
+                state["recorder"].metrics.incr("quality.invented_figures", len(invented))
+                m["status"] = "degraded"
+                m["attrs"] = {"invented_figures": invented[:5]}
             return {"answer": answer}
 
     def follow_up(state: AgentState) -> AgentState:
